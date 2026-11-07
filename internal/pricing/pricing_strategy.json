@@ -1,0 +1,27 @@
+{
+  "comment": "dsmon-linux 计费规则。结构与 ocscale 的 pricing_strategy.json 一致：价格均为人民币元 / 1M tokens，miss = 缓存未命中输入，hit = 缓存命中输入，out = 输出。peak / offpeak / weekend_* 档位在计费时按请求时刻（北京时间）解析。高峰时段为北京时间周一至周五 09:00–12:00、14:00–18:00，其余为空闲时段（空闲价 = 高峰价的一半）。想自定义价格：把本文件复制到 ~/.config/dsmon/pricing_strategy.json 再改（该文件存在时完全替代本内置快照；改完重启守护进程，新价从那一刻起生效，历史费用保持不变 —— 每行的价钱由它发生时刻生效的那份规则决定，规则连同生效时刻一起存进 usage.db 的 pricing_revision 表）。若模型不在 models 表中，其费用记为 0（未知不计数）；模型后来补进表里时，启动维护会把这类 0 费用的行补算出来。",
+  "deepseek": {
+    "peak_hours": {
+      "weekday": [[9, 12], [14, 18]],
+      "weekend": []
+    },
+    "models": {
+      "deepseek-flash": {
+        "offpeak": { "miss": 1.0, "hit": 0.02, "out": 4.0 },
+        "peak": { "miss": 2.0, "hit": 0.04, "out": 8.0 }
+      },
+      "deepseek-v4-flash": {
+        "offpeak": { "miss": 1.0, "hit": 0.02, "out": 4.0 },
+        "peak": { "miss": 2.0, "hit": 0.04, "out": 8.0 }
+      },
+      "deepseek-v4-flash-vision-exp": {
+        "offpeak": { "miss": 1.0, "hit": 0.02, "out": 4.0 },
+        "peak": { "miss": 2.0, "hit": 0.04, "out": 8.0 }
+      },
+      "deepseek-v4-pro": {
+        "offpeak": { "miss": 4.5, "hit": 0.15, "out": 13.5 },
+        "peak": { "miss": 9.0, "hit": 0.3, "out": 27.0 }
+      }
+    }
+  }
+}

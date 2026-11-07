@@ -1,0 +1,15 @@
+[Unit]
+Description=dsmon local API proxy and usage recorder
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/dsmon serve
+LoadCredentialEncrypted=dsmon-api-key:%h/.config/dsmon/api-key.cred
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+

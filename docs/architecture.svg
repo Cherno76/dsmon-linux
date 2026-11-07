@@ -1,0 +1,252 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1300" viewBox="0 0 1800 1300">
+<defs>
+  <marker id="m-data" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#7dcfff"/></marker>
+  <marker id="m-ctrl" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#e0af68"/></marker>
+  <marker id="m-store" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#9ece6a"/></marker>
+  <marker id="m-mem" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#bb9af7"/></marker>
+  <marker id="m-key" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#f7768e"/></marker>
+  <marker id="m-up" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#ff9e64"/></marker>
+  <style>
+    .title { font-family: "Noto Sans CJK SC"; font-size: 27px; font-weight: 700; fill: #c0caf5; }
+    .subtitle { font-family: "Noto Sans CJK SC"; font-size: 13px; fill: #7aa2f7; }
+    .cluster-title { font-family: "Noto Sans CJK SC"; font-size: 15px; font-weight: 700; fill: #c0caf5; }
+    .cluster-sub { font-family: "Noto Sans CJK SC"; font-size: 10.5px; fill: #737aa2; }
+    .box-title { font-family: "Noto Sans CJK SC"; font-size: 14.5px; font-weight: 700; fill: #c0caf5; }
+    .body { font-family: "Noto Sans CJK SC"; font-size: 12px; fill: #a9b1d6; }
+    .small { font-family: "Noto Sans CJK SC"; font-size: 10.5px; fill: #a9b1d6; }
+    .mono { font-family: "Noto Sans Mono CJK SC", "Noto Sans CJK SC"; font-size: 10.3px; fill: #a9b1d6; }
+    .mono-sm { font-family: "Noto Sans Mono CJK SC", "Noto Sans CJK SC"; font-size: 9.4px; fill: #a9b1d6; }
+    .label { font-family: "Noto Sans CJK SC"; font-size: 10.5px; fill: #a9b1d6; paint-order: stroke; stroke: #16161e; stroke-width: 4px; stroke-linejoin: round; }
+    .legend { font-family: "Noto Sans CJK SC"; font-size: 11px; fill: #a9b1d6; }
+    .lane { font-family: "Noto Sans CJK SC"; font-size: 11px; fill: #737aa2; letter-spacing: 1px; }
+    .data { stroke: #7dcfff; stroke-width: 1.55; fill: none; marker-end: url(#m-data); }
+    .ctrl { stroke: #e0af68; stroke-width: 1.4; fill: none; stroke-dasharray: 7 5; marker-end: url(#m-ctrl); }
+    .store { stroke: #9ece6a; stroke-width: 1.55; fill: none; marker-end: url(#m-store); }
+    .mem { stroke: #bb9af7; stroke-width: 1.4; fill: none; stroke-dasharray: 3 4; marker-end: url(#m-mem); }
+    .key { stroke: #f7768e; stroke-width: 1.35; fill: none; stroke-dasharray: 7 5; marker-end: url(#m-key); }
+    .up { stroke: #ff9e64; stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; marker-end: url(#m-up); }
+  </style>
+</defs>
+<rect width="100%" height="100%" fill="#16161e"/>
+<text x="900" y="48" class="title" text-anchor="middle" >DS-mon Linux · 运行时架构</text>
+<text x="900" y="73" class="subtitle" text-anchor="middle" >Phase 1–5 当前实现 · Go + Bubble Tea + SQLite · 本机回环代理</text>
+<rect x="35" y="145" width="300" height="275" rx="14" fill="#1a1b26" stroke="#7aa2f7" stroke-width="1.35" stroke-dasharray="8 6"/>
+<circle cx="54" cy="167" r="4" fill="#7aa2f7"/>
+<text x="66" y="172" class="cluster-title" text-anchor="start" >本机 AI 客户端</text>
+<text x="66" y="191" class="cluster-sub" text-anchor="start" >统一指向本地 base URL</text>
+<rect x="35" y="475" width="300" height="245" rx="14" fill="#1a1b26" stroke="#bb9af7" stroke-width="1.35" stroke-dasharray="8 6"/>
+<circle cx="54" cy="497" r="4" fill="#bb9af7"/>
+<text x="66" y="502" class="cluster-title" text-anchor="start" >交互进程</text>
+<text x="66" y="521" class="cluster-sub" text-anchor="start" >退出不影响代理</text>
+<rect x="380" y="100" width="1010" height="800" rx="14" fill="#1a1b26" stroke="#bb9af7" stroke-width="1.35" stroke-dasharray=""/>
+<circle cx="399" cy="122" r="4" fill="#bb9af7"/>
+<text x="411" y="127" class="cluster-title" text-anchor="start" >systemd --user · dsmon serve</text>
+<text x="411" y="146" class="cluster-sub" text-anchor="start" >常驻守护进程 · 唯一写库者</text>
+<rect x="1430" y="130" width="335" height="330" rx="14" fill="#1a1b26" stroke="#ff9e64" stroke-width="1.35" stroke-dasharray="8 6"/>
+<circle cx="1449" cy="152" r="4" fill="#ff9e64"/>
+<text x="1461" y="157" class="cluster-title" text-anchor="start" >上游 API · HTTPS</text>
+<text x="1461" y="176" class="cluster-sub" text-anchor="start" >按路由选择 base URL</text>
+<rect x="380" y="930" width="1385" height="300" rx="14" fill="#1a1b26" stroke="#9ece6a" stroke-width="1.35" stroke-dasharray="8 6"/>
+<circle cx="399" cy="952" r="4" fill="#9ece6a"/>
+<text x="411" y="957" class="cluster-title" text-anchor="start" >本机持久状态</text>
+<text x="411" y="976" class="cluster-sub" text-anchor="start" >XDG 路径 · 文件权限 0600</text>
+<rect x="55" y="205" width="260" height="55" rx="8" fill="#24283b" stroke="#7aa2f7" stroke-width="1.25"/>
+<rect x="55" y="215" width="3" height="35" rx="1.5" fill="#7aa2f7" opacity="0.9"/>
+<text x="70" y="232" class="box-title" text-anchor="start" >Codex CLI</text>
+<text x="70" y="255.0" class="mono-sm" text-anchor="start" >base_url = 127.0.0.1:18080/v1</text>
+<rect x="55" y="270" width="260" height="55" rx="8" fill="#24283b" stroke="#7aa2f7" stroke-width="1.25"/>
+<rect x="55" y="280" width="3" height="35" rx="1.5" fill="#7aa2f7" opacity="0.9"/>
+<text x="70" y="297" class="box-title" text-anchor="start" >opencode</text>
+<text x="70" y="320.0" class="body" text-anchor="start" >OpenAI / Anthropic 兼容请求</text>
+<rect x="55" y="335" width="260" height="55" rx="8" fill="#24283b" stroke="#7aa2f7" stroke-width="1.25"/>
+<rect x="55" y="345" width="3" height="35" rx="1.5" fill="#7aa2f7" opacity="0.9"/>
+<text x="70" y="362" class="box-title" text-anchor="start" >DSH / 其他客户端</text>
+<text x="70" y="385.0" class="body" text-anchor="start" >占位 token · 不携带真实 key</text>
+<rect x="55" y="535" width="260" height="72" rx="8" fill="#24283b" stroke="#bb9af7" stroke-width="1.25"/>
+<rect x="55" y="545" width="3" height="52" rx="1.5" fill="#bb9af7" opacity="0.9"/>
+<text x="70" y="562" class="box-title" text-anchor="start" >dsmon tui</text>
+<text x="70" y="585.0" class="body" text-anchor="start" >概览 / 用量 / 请求 / 计费</text>
+<text x="70" y="601.5" class="small" text-anchor="start" >Braille · btop 风格</text>
+<rect x="55" y="620" width="260" height="82" rx="8" fill="#24283b" stroke="#bb9af7" stroke-width="1.25"/>
+<rect x="55" y="630" width="3" height="62" rx="1.5" fill="#bb9af7" opacity="0.9"/>
+<text x="70" y="647" class="box-title" text-anchor="start" >dsmon settings</text>
+<text x="70" y="670.0" class="body" text-anchor="start" >表单校验 · 原子写配置</text>
+<text x="70" y="686.5" class="small" text-anchor="start" >保存后通过 IPC 请求 reload</text>
+<rect x="420" y="200" width="175" height="125" rx="8" fill="#24283b" stroke="#7dcfff" stroke-width="1.25"/>
+<rect x="420" y="210" width="3" height="105" rx="1.5" fill="#7dcfff" opacity="0.9"/>
+<text x="435" y="227" class="box-title" text-anchor="start" >HTTP 代理</text>
+<text x="435" y="250.0" class="mono" text-anchor="start" >127.0.0.1:18080</text>
+<text x="435" y="266.5" class="body" text-anchor="start" >64KB 头 · 20MiB 体</text>
+<text x="435" y="283.0" class="body" text-anchor="start" >64 并发 · 120s 收包</text>
+<rect x="650" y="200" width="250" height="125" rx="8" fill="#24283b" stroke="#7dcfff" stroke-width="1.25"/>
+<rect x="650" y="210" width="3" height="105" rx="1.5" fill="#7dcfff" opacity="0.9"/>
+<text x="665" y="227" class="box-title" text-anchor="start" >固定路由 + 鉴权</text>
+<text x="665" y="250.0" class="mono-sm" text-anchor="start" >/v1/chat/completions · /v1/responses</text>
+<text x="665" y="266.5" class="mono-sm" text-anchor="start" >→ OpenAI base</text>
+<text x="665" y="283.0" class="mono-sm" text-anchor="start" >/v1/messages → Anthropic base</text>
+<text x="665" y="299.5" class="mono-sm" text-anchor="start" >/v1/tools/search · /v1/tools/fetch</text>
+<text x="665" y="316.0" class="mono-sm" text-anchor="start" >→ tools base · 其他 404 · RPM</text>
+<rect x="950" y="200" width="190" height="125" rx="8" fill="#24283b" stroke="#7dcfff" stroke-width="1.25"/>
+<rect x="950" y="210" width="3" height="105" rx="1.5" fill="#7dcfff" opacity="0.9"/>
+<text x="965" y="227" class="box-title" text-anchor="start" >上游 Transport</text>
+<text x="965" y="250.0" class="body" text-anchor="start" >HTTP/2 · keep-alive</text>
+<text x="965" y="266.5" class="body" text-anchor="start" >禁用自动解压</text>
+<text x="965" y="283.0" class="body" text-anchor="start" >Dial 30s · TLS 15s</text>
+<rect x="650" y="350" width="250" height="90" rx="8" fill="#24283b" stroke="#bb9af7" stroke-width="1.25"/>
+<rect x="650" y="360" width="3" height="70" rx="1.5" fill="#bb9af7" opacity="0.9"/>
+<text x="665" y="377" class="box-title" text-anchor="start" >响应透传</text>
+<text x="665" y="400.0" class="body" text-anchor="start" >压缩字节 / SSE 原样</text>
+<text x="665" y="416.5" class="body" text-anchor="start" >不改 Content-Encoding</text>
+<text x="665" y="433.0" class="body" text-anchor="start" >不设响应总时长</text>
+<rect x="950" y="350" width="190" height="90" rx="8" fill="#24283b" stroke="#bb9af7" stroke-width="1.25"/>
+<rect x="950" y="360" width="3" height="70" rx="1.5" fill="#bb9af7" opacity="0.9"/>
+<text x="965" y="377" class="box-title" text-anchor="start" >旁路分析</text>
+<text x="965" y="400.0" class="body" text-anchor="start" >gzip · deflate · zstd</text>
+<text x="965" y="416.5" class="body" text-anchor="start" >SSE 增量解析</text>
+<text x="965" y="433.0" class="body" text-anchor="start" >提取 usage</text>
+<rect x="420" y="490" width="280" height="100" rx="8" fill="#24283b" stroke="#bb9af7" stroke-width="1.25"/>
+<rect x="420" y="500" width="3" height="80" rx="1.5" fill="#bb9af7" opacity="0.9"/>
+<text x="435" y="517" class="box-title" text-anchor="start" >内存曲线环</text>
+<text x="435" y="540.0" class="body" text-anchor="start" >Activity 20 × 30s</text>
+<text x="435" y="556.5" class="body" text-anchor="start" >Traffic 3600 × 0.5s</text>
+<text x="435" y="573.0" class="body" text-anchor="start" >上行 / 下行 · 盲文渲染</text>
+<rect x="720" y="490" width="280" height="100" rx="8" fill="#24283b" stroke="#bb9af7" stroke-width="1.25"/>
+<rect x="720" y="500" width="3" height="80" rx="1.5" fill="#bb9af7" opacity="0.9"/>
+<text x="735" y="517" class="box-title" text-anchor="start" >余额轮询</text>
+<text x="735" y="540.0" class="body" text-anchor="start" >启动即查 · 之后 60s</text>
+<text x="735" y="556.5" class="body" text-anchor="start" >失败退避至 5min</text>
+<text x="735" y="573.0" class="body" text-anchor="start" >只展示，不对账</text>
+<rect x="1070" y="520" width="280" height="82" rx="8" fill="#1e2030" stroke="#bb9af7" stroke-width="1.25" stroke-dasharray="5 4"/>
+<rect x="1070" y="530" width="3" height="62" rx="1.5" fill="#bb9af7" opacity="0.9"/>
+<text x="1085" y="547" class="box-title" text-anchor="start" >曲线只存在 daemon 内存</text>
+<text x="1085" y="570.0" class="small" text-anchor="start" >TUI 每秒通过 IPC 取一帧</text>
+<text x="1085" y="586.5" class="small" text-anchor="start" >不写 SQLite</text>
+<rect x="420" y="660" width="280" height="130" rx="8" fill="#24283b" stroke="#e0af68" stroke-width="1.25"/>
+<rect x="420" y="670" width="3" height="110" rx="1.5" fill="#e0af68" opacity="0.9"/>
+<text x="435" y="687" class="box-title" text-anchor="start" >IPC server</text>
+<text x="435" y="710.0" class="mono-sm" text-anchor="start" >$XDG_RUNTIME_DIR/dsmon.sock</text>
+<text x="435" y="726.5" class="small" text-anchor="start" >0600 · JSON lines</text>
+<text x="435" y="743.0" class="mono-sm" text-anchor="start" >stats / trace / series</text>
+<text x="435" y="759.5" class="mono-sm" text-anchor="start" >requests / pricing / reload</text>
+<rect x="740" y="660" width="300" height="130" rx="8" fill="#24283b" stroke="#9ece6a" stroke-width="1.25"/>
+<rect x="740" y="670" width="3" height="110" rx="1.5" fill="#9ece6a" opacity="0.9"/>
+<text x="755" y="687" class="box-title" text-anchor="start" >store · 单一写 goroutine</text>
+<text x="755" y="710.0" class="body" text-anchor="start" >事务串行队列</text>
+<text x="755" y="726.5" class="body" text-anchor="start" >用量 / 余额 / 修订 / 清理</text>
+<text x="755" y="743.0" class="body" text-anchor="start" >只读查询并发</text>
+<text x="755" y="759.5" class="body" text-anchor="start" >按记录时间戳计价</text>
+<rect x="1080" y="660" width="250" height="130" rx="8" fill="#24283b" stroke="#e0af68" stroke-width="1.25"/>
+<rect x="1080" y="670" width="3" height="110" rx="1.5" fill="#e0af68" opacity="0.9"/>
+<text x="1095" y="687" class="box-title" text-anchor="start" >热加载代际</text>
+<text x="1095" y="710.0" class="body" text-anchor="start" >同端口：原子替换配置</text>
+<text x="1095" y="726.5" class="body" text-anchor="start" >换端口：先绑新 listener</text>
+<text x="1095" y="743.0" class="body" text-anchor="start" >store 与 socket 不重建</text>
+<text x="1095" y="759.5" class="body" text-anchor="start" >失败时旧代继续服务</text>
+<rect x="1450" y="185" width="295" height="120" rx="8" fill="#24283b" stroke="#ff9e64" stroke-width="1.25"/>
+<rect x="1450" y="195" width="3" height="100" rx="1.5" fill="#ff9e64" opacity="0.9"/>
+<text x="1465" y="212" class="box-title" text-anchor="start" >兼容 API</text>
+<text x="1465" y="235.0" class="body" text-anchor="start" >OpenAI: chat / responses</text>
+<text x="1465" y="251.5" class="body" text-anchor="start" >Anthropic: messages</text>
+<text x="1465" y="268.0" class="body" text-anchor="start" >tools: search / fetch</text>
+<text x="1465" y="284.5" class="small" text-anchor="start" >默认 api.deepseek.com</text>
+<rect x="1450" y="335" width="295" height="82" rx="8" fill="#24283b" stroke="#ff9e64" stroke-width="1.25"/>
+<rect x="1450" y="345" width="3" height="62" rx="1.5" fill="#ff9e64" opacity="0.9"/>
+<text x="1465" y="362" class="box-title" text-anchor="start" >余额 API</text>
+<text x="1465" y="385.0" class="mono" text-anchor="start" >/user/balance</text>
+<text x="1465" y="401.5" class="small" text-anchor="start" >60s 轮询</text>
+<path d="M 720,990 V 1115 A 130,18 0 0 0 980,1115 V 990" fill="#24283b" stroke="#9ece6a" stroke-width="1.3"/>
+<ellipse cx="850" cy="990" rx="130" ry="18" fill="#24283b" stroke="#9ece6a" stroke-width="1.3"/>
+<text x="850" y="1017" class="box-title" text-anchor="middle" >usage.db</text>
+<text x="850" y="1040" class="small" text-anchor="middle" >SQLite · WAL</text>
+<text x="850" y="1055" class="mono-sm" text-anchor="middle" >usage_log</text>
+<text x="850" y="1070" class="mono-sm" text-anchor="middle" >balance_sample</text>
+<text x="850" y="1085" class="mono-sm" text-anchor="middle" >pricing_revision</text>
+<text x="850" y="1100" class="mono-sm" text-anchor="middle" >meta</text>
+<path d="M 438,1010 H 666 L 680,1024 V 1114 Q 680,1122 672,1122 H 438 Q 430,1122 430,1114 V 1018 Q 430,1010 438,1010 Z" fill="#24283b" stroke="#e0af68" stroke-width="1.25"/>
+<path d="M 666,1010 V 1024 H 680" fill="none" stroke="#e0af68" stroke-width="1.1" opacity="0.8"/>
+<text x="445" y="1037" class="box-title" text-anchor="start" >pricing_strategy.json</text>
+<text x="445" y="1060.0" class="body" text-anchor="start" >可选覆盖内置计费目录</text>
+<text x="445" y="1076.5" class="body" text-anchor="start" >只在启动时加载</text>
+<path d="M 1088,995 H 1316 L 1330,1009 V 1099 Q 1330,1107 1322,1107 H 1088 Q 1080,1107 1080,1099 V 1003 Q 1080,995 1088,995 Z" fill="#24283b" stroke="#e0af68" stroke-width="1.25"/>
+<path d="M 1316,995 V 1009 H 1330" fill="none" stroke="#e0af68" stroke-width="1.1" opacity="0.8"/>
+<text x="1095" y="1022" class="box-title" text-anchor="start" >config.toml</text>
+<text x="1095" y="1045.0" class="body" text-anchor="start" >受控 TOML 子集</text>
+<text x="1095" y="1061.5" class="body" text-anchor="start" >原子写入 · 0600</text>
+<path d="M 1368,995 H 1596 L 1610,1009 V 1119 Q 1610,1127 1602,1127 H 1368 Q 1360,1127 1360,1119 V 1003 Q 1360,995 1368,995 Z" fill="#24283b" stroke="#f7768e" stroke-width="1.25"/>
+<path d="M 1596,995 V 1009 H 1610" fill="none" stroke="#f7768e" stroke-width="1.1" opacity="0.8"/>
+<text x="1375" y="1022" class="box-title" text-anchor="start" >凭据</text>
+<text x="1375" y="1045.0" class="body" text-anchor="start" >api_key_enc + enc_key</text>
+<text x="1375" y="1061.5" class="body" text-anchor="start" >systemd 加密凭据</text>
+<text x="1375" y="1078.0" class="body" text-anchor="start" >明文仅驻留内存</text>
+<text x="0" y="0" transform="translate(399,292) rotate(-90)" class="lane" text-anchor="middle">数据面</text>
+<text x="0" y="0" transform="translate(399,540) rotate(-90)" class="lane" text-anchor="middle">运行状态</text>
+<text x="0" y="0" transform="translate(399,725) rotate(-90)" class="lane" text-anchor="middle">控制面</text>
+<path d="M 335,232 L 420,245" class="data"/>
+<text x="377" y="226" class="label" text-anchor="middle" >HTTP 请求</text>
+<path d="M 595,250 L 650,250" class="data"/>
+<text x="622" y="242" class="label" text-anchor="middle" >请求</text>
+<path d="M 900,250 L 950,250" class="data"/>
+<text x="925" y="242" class="label" text-anchor="middle" >路由</text>
+<path d="M 1140,250 L 1450,245" class="data"/>
+<text x="1295" y="238" class="label" text-anchor="middle" >HTTPS</text>
+<path d="M 1045,315 L 1045,350" class="mem"/>
+<text x="1052" y="338" class="label" text-anchor="start" >响应字节</text>
+<path d="M 650,395 L 335,395" class="mem"/>
+<text x="492" y="387" class="label" text-anchor="middle" >响应 / SSE</text>
+<path d="M 900,395 L 950,395" class="mem"/>
+<text x="925" y="387" class="label" text-anchor="middle" >复制</text>
+<path d="M 1045,440 L 1045,620 L 980,620 L 980,660" class="store"/>
+<text x="1132" y="612" class="label" text-anchor="start" >UsageRecord</text>
+<path d="M 700,540 L 720,540" class="mem"/>
+<path d="M 520,590 L 520,660" class="mem"/>
+<text x="528" y="630" class="label" text-anchor="start" >trace 快照</text>
+<path d="M 740,540 L 720,540" class="ctrl"/>
+<path d="M 720,540 L 720,620 L 600,620 L 600,660" class="ctrl"/>
+<text x="720" y="610" class="label" text-anchor="start" >最新余额</text>
+<path d="M 860,590 L 860,660" class="store"/>
+<text x="868" y="625" class="label" text-anchor="start" >balance_sample</text>
+<path d="M 1000,525 L 1450,375" class="up"/>
+<text x="1240" y="452" class="label" text-anchor="middle" >60s</text>
+<path d="M 315,560 L 420,690" class="ctrl"/>
+<text x="342" y="635" class="label" text-anchor="start" >实时帧 / 查询</text>
+<path d="M 315,655 L 420,735" class="ctrl"/>
+<text x="342" y="720" class="label" text-anchor="start" >reload</text>
+<path d="M 700,725 L 740,725" class="ctrl"/>
+<text x="720" y="716" class="label" text-anchor="middle" >只读查询</text>
+<path d="M 560,790 L 560,825 L 1205,825 L 1205,790" class="ctrl"/>
+<text x="875" y="818" class="label" text-anchor="middle" >reload 命令</text>
+<path d="M 1205,660 L 1205,630 L 1020,630 L 1020,455 L 850,455" class="ctrl"/>
+<text x="1042" y="447" class="label" text-anchor="start" >新配置代</text>
+<path d="M 850,790 L 850,982" class="store"/>
+<text x="858" y="875" class="label" text-anchor="start" >事务提交</text>
+<path d="M 185,702 L 185,908 L 1108,908 L 1108,995" class="ctrl"/>
+<text x="690" y="900" class="label" text-anchor="middle" >原子写</text>
+<path d="M 1205,995 L 1205,790" class="ctrl"/>
+<text x="1213" y="900" class="label" text-anchor="start" >启动 / reload 读取</text>
+<path d="M 1390,995 L 1290,790" class="key"/>
+<text x="1370" y="925" class="label" text-anchor="start" >key 加载</text>
+<path d="M 555,1010 L 800,790" class="ctrl"/>
+<text x="585" y="970" class="label" text-anchor="start" >可选覆盖</text>
+<rect x="1430" y="490" width="335" height="190" rx="8" fill="#1b1e2e" stroke="#7aa2f7" stroke-width="1.25" stroke-dasharray="5 4"/>
+<rect x="1430" y="500" width="3" height="170" rx="1.5" fill="#7aa2f7" opacity="0.9"/>
+<text x="1445" y="517" class="box-title" text-anchor="start" >图例</text>
+<path d="M 1450,535 L 1500,535" class="data"/>
+<text x="1512" y="539" class="legend" text-anchor="start" >请求 / 响应数据流</text>
+<path d="M 1450,562 L 1500,562" class="ctrl"/>
+<text x="1512" y="566" class="legend" text-anchor="start" >控制 / 配置 / 热加载</text>
+<path d="M 1450,589 L 1500,589" class="store"/>
+<text x="1512" y="593" class="legend" text-anchor="start" >持久化写入 / 读取</text>
+<path d="M 1450,616 L 1500,616" class="mem"/>
+<text x="1512" y="620" class="legend" text-anchor="start" >内存采集 / 曲线快照</text>
+<path d="M 1450,643 L 1500,643" class="key"/>
+<text x="1512" y="647" class="legend" text-anchor="start" >凭据加载</text>
+<rect x="1430" y="710" width="335" height="180" rx="8" fill="#1b1e2e" stroke="#9ece6a" stroke-width="1.25" stroke-dasharray="5 4"/>
+<rect x="1430" y="720" width="3" height="160" rx="1.5" fill="#9ece6a" opacity="0.9"/>
+<text x="1445" y="737" class="box-title" text-anchor="start" >关键约束</text>
+<text x="1445" y="760.0" class="body" text-anchor="start" >只监听 127.0.0.1</text>
+<text x="1445" y="776.5" class="body" text-anchor="start" >TUI 不直接写 SQLite</text>
+<text x="1445" y="793.0" class="body" text-anchor="start" >所有写入经单一 goroutine</text>
+<text x="1445" y="809.5" class="body" text-anchor="start" >key 明文只驻留内存</text>
+<text x="1445" y="826.0" class="body" text-anchor="start" >未命中路由直接 404</text>
+<text x="430" y="1205" class="small" text-anchor="start" >dsmon import：离线复制 / 去重合并 macOS usage.db</text>
+</svg>

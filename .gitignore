@@ -1,0 +1,11 @@
+/build/
+/dist/
+/dsmon
+*.db
+*.db-wal
+*.db-shm
+*.log
+.DS_Store
+.idea/
+.vscode/
+
