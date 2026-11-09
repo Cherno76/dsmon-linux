@@ -55,7 +55,7 @@
 | `ActivityCurveFrame.swift` | Adapt | `internal/tui/chart`：保留 bars/shift/grid/health，删 alpha/呼吸 |
 | `StatusBarMetrics.swift` | Adapt | 只保留曲线常量：桶宽/桶数/满量程/网格间距 |
 | `ActivityMeter.swift` | Adapt | 只保留 `idleHealth` 的健康判定；去掉回落/呼吸/光晕 |
-| `IconSpin.swift`、`GaugeNeedle.swift` | Adapt | `packaging/omarchy/cherno.dsmon`：保留 siren/warning/gauge 三格、0.45 秒/格 smoothstep、10 秒仪表及指针时间轴 |
+| `IconSpin.swift`、`GaugeNeedle.swift`、`GaugeIdleFidget.swift` | Adapt | `packaging/omarchy/cherno.dsmon`：保留 siren/warning/gauge 三格、0.45 秒/格 smoothstep、10 秒仪表、240° 指针、圆弧内暖橙辉光和空闲双拍轻抬 |
 | `IconTrace.swift`、`IconTraceRenderer.swift` | Drop | Omarchy 栏不再显示活动线；TUI 状态使用独立曲线面板 |
 | `StatusBarController.swift`（图标状态） | Adapt | `dsmon status --json` 提供最后活动时间，Omarchy QML 使用 Mac 仪表/警报 PNG 和指针动画 |
 | `TrafficCurveRenderer.swift`、`ActivityCurveRenderer.swift` | Ref | 画法参考；Go 版用 Braille 重写 |

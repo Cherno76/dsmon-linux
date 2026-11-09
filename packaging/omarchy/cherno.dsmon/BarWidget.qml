@@ -37,6 +37,11 @@ BarWidget {
   property real needleRiseStartMs: 0
   property real acknowledgedActivityMs: 0
   property real needleHoldUntilMs: 0
+  property real activityGlow: 0
+  property real idleLift: 0
+  property bool needleNudging: false
+  property real idleNudgeNextAtMs: 0
+  property real idleNudgeStartMs: 0
 
   readonly property real estimatedServerNowMs:
     serverNowMs > 0 ? serverNowMs + (animationClockMs - responseReceivedMs) : animationClockMs
@@ -52,9 +57,14 @@ BarWidget {
     alarm && !Style.reduceMotion ? (alertBlinkOn ? 1 : 0.35) : 1
   readonly property color templateColor:
     root.bar ? root.bar.barForeground : Commons.Color.foreground
-  readonly property color gaugeColor:
-    activityAgeMs < 25000 ? Commons.Color.accent : templateColor
-  readonly property real needleRotation: 180 + needle * 270
+  readonly property color barBackground:
+    root.bar ? root.bar.background : Commons.Color.background
+  readonly property bool darkBar:
+    0.2126 * barBackground.r + 0.7152 * barBackground.g + 0.0722 * barBackground.b < 0.5
+  readonly property color glowColor: darkBar ? "#ff9445" : "#c44a00"
+  readonly property real displayNeedle: Math.max(needle, idleLift)
+  readonly property bool iconAnimating: sliding || needleRising || needleNudging
+  readonly property real needleRotation: 195 + displayNeedle * 240
 
   Commons.Translations {
     id: strings
@@ -135,6 +145,7 @@ BarWidget {
     animationClockMs = now
     advanceNeedle(now)
     advanceSlide(now)
+    advanceIdleNudge(now)
   }
 
   function advanceNeedle(now) {
@@ -144,28 +155,31 @@ BarWidget {
         needle = 0
         needleRising = false
         needleHoldUntilMs = 0
-        return
+        activityGlow = 0
+      } else {
+        needleHoldUntilMs = lastActivityMs + 10000
+        const ageAtDetection = estimatedServerNowMs - lastActivityMs
+        if (ageAtDetection >= 10000) {
+          needle = 0
+          needleRising = false
+        } else {
+          needleRiseFrom = needle
+          needleRiseStartMs = now
+          needleRising = true
+        }
       }
-      needleHoldUntilMs = lastActivityMs + 10000
-      const ageAtDetection = estimatedServerNowMs - lastActivityMs
-      if (ageAtDetection >= 10000) {
-        needle = 0
-        needleRising = false
-        return
-      }
-      needleRiseFrom = needle
-      needleRiseStartMs = now
-      needleRising = true
     }
-    if (Style.reduceMotion) {
-      needle = lastActivityMs > 0 && estimatedServerNowMs < needleHoldUntilMs ? 1 : 0
+    if (targetSlot !== 2) {
+      needle = 0
       needleRising = false
+      activityGlow = 0
       return
     }
     if (needleRising) {
       const elapsed = now - needleRiseStartMs
       if (elapsed < 400) {
         needle = needleRiseFrom + (1 - needleRiseFrom) * smoothstep(elapsed / 400)
+        activityGlow = needle
         return
       }
       needle = 1
@@ -173,6 +187,7 @@ BarWidget {
     }
     if (lastActivityMs <= 0 || now >= needleHoldUntilMs) {
       needle = 0
+      activityGlow = 0
       return
     }
     const fallStart = needleRiseStartMs + 400
@@ -180,16 +195,64 @@ BarWidget {
     needle = span > 50
       ? Math.min(1, Math.max(0, 1 - (now - fallStart) / span))
       : 0
+    activityGlow = needle
+  }
+
+  function advanceIdleNudge(now) {
+    const idleForNudge = targetSlot === 2
+      && !needleRising
+      && !sliding
+      && needle < 1e-9
+    if (!idleForNudge || Style.reduceMotion) {
+      resetIdleNudge()
+      return
+    }
+    if (needleNudging) {
+      const elapsed = now - idleNudgeStartMs
+      if (elapsed >= 0 && elapsed < 1120) {
+        idleLift = shapedIdleLift(elapsed)
+        return
+      }
+      needleNudging = false
+      idleLift = 0
+    }
+    if (idleNudgeNextAtMs > 0) {
+      if (now < idleNudgeNextAtMs) return
+      idleNudgeNextAtMs = 0
+      idleNudgeStartMs = now
+      needleNudging = true
+      idleLift = 0
+      return
+    }
+    idleNudgeNextAtMs = now + 25000 + Math.random() * 20000
+  }
+
+  function resetIdleNudge() {
+    idleNudgeNextAtMs = 0
+    idleNudgeStartMs = 0
+    needleNudging = false
+    idleLift = 0
+  }
+
+  function shapedIdleLift(elapsed) {
+    const rise = 230
+    const fall = 250
+    const gap = 160
+    const firstFallEnd = rise + fall
+    const secondRiseStart = firstFallEnd + gap
+    const secondRiseEnd = secondRiseStart + rise
+    const maxLift = 16 / 240
+    if (elapsed < rise) return maxLift * smoothstep(elapsed / rise)
+    if (elapsed < firstFallEnd) return maxLift * (1 - smoothstep((elapsed - rise) / fall))
+    if (elapsed < secondRiseStart) return 0
+    if (elapsed < secondRiseEnd) {
+      return maxLift * smoothstep((elapsed - secondRiseStart) / rise)
+    }
+    return maxLift * (1 - smoothstep((elapsed - secondRiseEnd) / fall))
   }
 
   function advanceSlide(now) {
     const target = targetSlot
-    if (Style.reduceMotion) {
-      slotPosition = target
-      slideTo = target
-      sliding = false
-      return
-    }
     if (!sliding && Math.abs(slotPosition - target) < 1e-6) return
     if (!sliding || slideTo !== target) {
       slideFrom = slotPosition
@@ -235,7 +298,7 @@ BarWidget {
   }
 
   Timer {
-    interval: Style.reduceMotion ? 1000 : Math.max(16, Style.duration(33))
+    interval: root.iconAnimating ? 33 : 100
     running: true
     repeat: true
     triggeredOnStart: true
@@ -297,16 +360,59 @@ BarWidget {
             width: 24
             height: 24
 
+            Canvas {
+              anchors.fill: parent
+              property real glow: root.activityGlow
+              property color glowInk: root.glowColor
+              visible: glow > 0
+              onGlowChanged: requestPaint()
+              onGlowInkChanged: requestPaint()
+              onVisibleChanged: if (visible) requestPaint()
+              onWidthChanged: requestPaint()
+              onHeightChanged: requestPaint()
+              onPaint: {
+                const ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                const raw = Math.min(1, Math.max(0, glow))
+                if (raw <= 0) return
+                const amount = Math.pow(raw, 0.68)
+                const unit = width / 24
+                const cx = 12 * unit
+                const cy = 14 * unit
+                const radius = 10 * unit
+                const color = glowInk
+
+                // 与指针共用 (12,14) 枢轴；从左侧 150° 扫到右侧 390°，共 240°。
+                ctx.beginPath()
+                for (let step = 0; step <= 60; step++) {
+                  const angle = Math.PI * (150 + step * 4) / 180
+                  const x = cx + radius * Math.cos(angle)
+                  const y = cy + radius * Math.sin(angle)
+                  if (step === 0) ctx.moveTo(x, y)
+                  else ctx.lineTo(x, y)
+                }
+                ctx.closePath()
+
+                const gradient = ctx.createRadialGradient(
+                  cx, cy, 0, cx, cy, radius * (0.36 + 0.86 * amount))
+                gradient.addColorStop(0, Qt.rgba(color.r, color.g, color.b, 0.16 + 0.44 * amount))
+                gradient.addColorStop(0.62, Qt.rgba(color.r, color.g, color.b, 0.05 + 0.29 * amount))
+                gradient.addColorStop(1, Qt.rgba(color.r, color.g, color.b, 0.04))
+                ctx.fillStyle = gradient
+                ctx.fill()
+              }
+            }
+
             TintedImage {
               anchors.fill: parent
               source: Qt.resolvedUrl("icons/menu_icon_gauge.png")
-              tint: root.gaugeColor
+              tint: root.templateColor
             }
 
             TintedImage {
               anchors.fill: parent
               source: Qt.resolvedUrl("icons/menu_icon_gauge_needle.png")
-              tint: root.gaugeColor
+              tint: root.templateColor
               transform: Rotation {
                 origin.x: 12
                 origin.y: 14

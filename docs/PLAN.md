@@ -205,8 +205,8 @@
 - [x] 流量采样桶和 TUI tick 均改为 2 秒；3600 个流量桶保留约 2 小时
 - [x] 活动曲线改为 3600 × 2s 宽度驱动窗口，每个点列一个桶，最新数据贴右
 - [x] TUI 恢复静态 `● Online`，不承载图标动效
-- [x] Omarchy 栏使用 Mac 仪表/警报资产：保留 siren、warning、gauge 三格与指针时间轴，
-  无请求时指针回到左侧低点；新增 `dsmon status --json`
+- [x] Omarchy 栏使用 Mac 仪表/警报资产：保留 siren、warning、gauge 三格、240° 指针时间轴、
+  圆弧内活动辉光和空闲双拍轻抬；新增 `dsmon status --json`
 - [x] 请求：100 条分页、选中行详情；计费：修订数/生效时间/来源只读摘要
 - [x] 帮助页、断线/空库/单条请求状态；`NO_COLOR` 与 `--ascii` 块字符回退
 - [x] TUI 配色跟随 Omarchy 当前 btop 主题，主题切换后运行中自动刷新，缺失时回退 Tokyo Night
