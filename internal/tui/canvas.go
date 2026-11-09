@@ -93,21 +93,31 @@ func (c *brailleCanvas) rows() []string {
 	return rows
 }
 
-// RenderActivity 按 6 秒桶绘制活动填充面；counts 的最后一格是当前桶。
+// RenderActivity 按 2 秒桶绘制活动填充面；每个点列一个桶，最新桶贴右。
 func RenderActivity(counts []int, width, height int, now time.Time, fullScale int) []string {
 	if width <= 0 || height <= 0 {
 		return nil
 	}
 	canvas := newBrailleCanvas(width, height)
+	// 和流量图一样，零基线属于画布本身，不随数据高度或是否有请求而消失。
+	for x := 0; x < width*2; x++ {
+		canvas.dot(x, height*4-1)
+	}
 	if len(counts) == 0 || fullScale <= 0 {
 		return canvas.rows()
 	}
 	dotsWidth, dotsHeight := width*2, height*4
+	if len(counts) > dotsWidth {
+		counts = counts[len(counts)-dotsWidth:]
+	}
+	offset := maxInt(0, dotsWidth-len(counts))
 	phase := trace.BucketPhase(now, trace.DefaultActivityBucketSeconds)
-	shift := int(math.Round(phase * float64(dotsWidth) / float64(maxInt(1, len(counts)-1))))
 
 	for x := 0; x < dotsWidth; x++ {
-		position := float64(x+shift) / float64(maxInt(1, dotsWidth-1)) * float64(len(counts)-1)
+		position := float64(x-offset) - phase
+		if position < 0 {
+			continue
+		}
 		value := activityValueAt(counts, position)
 		ratio := math.Min(1, math.Max(0, value/float64(fullScale)))
 		fill := int(math.Ceil(ratio * float64(dotsHeight)))
@@ -322,10 +332,18 @@ func RenderActivityBlocks(counts []int, width int) string {
 	if len(counts) == 0 {
 		return strings.Repeat(" ", width)
 	}
+	if len(counts) > width {
+		counts = counts[len(counts)-width:]
+	}
+	offset := maxInt(0, width-len(counts))
 	blocks := []rune(" ▁▂▃▄▅▆▇█")
 	var builder strings.Builder
 	for x := 0; x < width; x++ {
-		position := float64(x) / float64(maxInt(1, width-1)) * float64(len(counts)-1)
+		if x < offset {
+			builder.WriteByte(' ')
+			continue
+		}
+		position := float64(x - offset)
 		left := int(math.Floor(position))
 		right := left + 1
 		if right >= len(counts) {

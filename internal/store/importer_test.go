@@ -206,7 +206,7 @@ func TestImportDatabaseCopiesLegacySource(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("copied rows = %d, want 2", len(got))
 	}
-	if got[0].endpoint != "/v1/responses" || got[0].client != "Codex Desktop" ||
+	if got[0].endpoint != "/v1/responses" || got[0].client != "codex" ||
 		got[0].cost != 0.25 || got[0].revision == 0 || got[0].total != 110 {
 		t.Fatalf("first copied row = %+v", got[0])
 	}
@@ -346,7 +346,7 @@ func TestImportDatabaseMergesRemapsAndDedupes(t *testing.T) {
 	if err := target.db.QueryRowContext(ctx, `SELECT client FROM usage_log WHERE uuid = 'responses-row'`).Scan(&inferredClient); err != nil {
 		t.Fatal(err)
 	}
-	if inferredClient != "Codex Desktop" {
+	if inferredClient != "codex" {
 		t.Fatalf("legacy row client = %q, want endpoint inference", inferredClient)
 	}
 	if err := target.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM balance_sample`).Scan(&count); err != nil {

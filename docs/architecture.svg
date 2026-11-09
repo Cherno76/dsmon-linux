@@ -76,8 +76,8 @@
 <rect x="420" y="210" width="3" height="105" rx="1.5" fill="#7dcfff" opacity="0.9"/>
 <text x="435" y="227" class="box-title" text-anchor="start" >HTTP 代理</text>
 <text x="435" y="250.0" class="mono" text-anchor="start" >127.0.0.1:18080</text>
-<text x="435" y="266.5" class="body" text-anchor="start" >64KB 头 · 20MiB 体</text>
-<text x="435" y="283.0" class="body" text-anchor="start" >64 并发 · 120s 收包</text>
+<text x="435" y="266.5" class="body" text-anchor="start" >64KB 头 · 50MiB 体 · 64 并发</text>
+<text x="435" y="283.0" class="body" text-anchor="start" >大图 &gt;40MiB → file_id</text>
 <rect x="650" y="200" width="250" height="125" rx="8" fill="#24283b" stroke="#7dcfff" stroke-width="1.25"/>
 <rect x="650" y="210" width="3" height="105" rx="1.5" fill="#7dcfff" opacity="0.9"/>
 <text x="665" y="227" class="box-title" text-anchor="start" >固定路由 + 鉴权</text>
@@ -107,8 +107,8 @@
 <rect x="420" y="490" width="280" height="100" rx="8" fill="#24283b" stroke="#bb9af7" stroke-width="1.25"/>
 <rect x="420" y="500" width="3" height="80" rx="1.5" fill="#bb9af7" opacity="0.9"/>
 <text x="435" y="517" class="box-title" text-anchor="start" >内存曲线环</text>
-<text x="435" y="540.0" class="body" text-anchor="start" >Activity 20 × 30s</text>
-<text x="435" y="556.5" class="body" text-anchor="start" >Traffic 3600 × 0.5s</text>
+<text x="435" y="540.0" class="body" text-anchor="start" >Activity 3600 × 2s</text>
+<text x="435" y="556.5" class="body" text-anchor="start" >Traffic 3600 × 2s</text>
 <text x="435" y="573.0" class="body" text-anchor="start" >上行 / 下行 · 盲文渲染</text>
 <rect x="720" y="490" width="280" height="100" rx="8" fill="#24283b" stroke="#bb9af7" stroke-width="1.25"/>
 <rect x="720" y="500" width="3" height="80" rx="1.5" fill="#bb9af7" opacity="0.9"/>
@@ -119,7 +119,7 @@
 <rect x="1070" y="520" width="280" height="82" rx="8" fill="#1e2030" stroke="#bb9af7" stroke-width="1.25" stroke-dasharray="5 4"/>
 <rect x="1070" y="530" width="3" height="62" rx="1.5" fill="#bb9af7" opacity="0.9"/>
 <text x="1085" y="547" class="box-title" text-anchor="start" >曲线只存在 daemon 内存</text>
-<text x="1085" y="570.0" class="small" text-anchor="start" >TUI 每秒通过 IPC 取一帧</text>
+<text x="1085" y="570.0" class="small" text-anchor="start" >TUI 每 2 秒通过 IPC 取一帧</text>
 <text x="1085" y="586.5" class="small" text-anchor="start" >不写 SQLite</text>
 <rect x="420" y="660" width="280" height="130" rx="8" fill="#24283b" stroke="#e0af68" stroke-width="1.25"/>
 <rect x="420" y="670" width="3" height="110" rx="1.5" fill="#e0af68" opacity="0.9"/>

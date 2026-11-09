@@ -367,7 +367,7 @@ func TestClientBreakdownAndFilters(t *testing.T) {
 	for _, client := range clients {
 		found[client.Client] = true
 	}
-	for _, want := range []string{"opencode", "Codex Desktop", ClientUnknown} {
+	for _, want := range []string{"opencode", "codex", ClientUnknown} {
 		if !found[want] {
 			t.Fatalf("missing client %q in %+v", want, clients)
 		}
@@ -727,7 +727,10 @@ func TestClientIdentity(t *testing.T) {
 		want string
 	}{
 		{"opencode/1.17.18 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14", "opencode"},
-		{"Codex Desktop/0.154.0-alpha.6.2 (Mac OS 27.0; arm64)", "Codex Desktop"},
+		{"Codex Desktop/0.154.0-alpha.6.2 (Mac OS 27.0; arm64)", "codex"},
+		{"codex-tui/0.167.0", "codex"},
+		{"codex-exec/0.167.0", "codex"},
+		{"codex-cli/0.167.0", "codex"},
 		{"Mozilla/5.0 (compatible; codewhale/0.8.47; +https://github.com/Hmbown/CodeWhale)", "codewhale"},
 		{"Mozilla/5.0 (compatible; SomeTool/2.1; +https://example.com)", "sometool"},
 		{"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", ClientBrowser},
@@ -747,6 +750,52 @@ func TestClientIdentity(t *testing.T) {
 				t.Fatalf("ClientFromUserAgent(%q) = %q, want %q", tt.ua, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestMaintenanceMergesLegacyCodexClientNames(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t, filepath.Join(t.TempDir(), "usage.db"), rules(1, 0.1, 2, "deepseek-flash"))
+	records := []UsageRecord{
+		recordAt(testNow.Add(-4*time.Minute), "deepseek-flash"),
+		recordAt(testNow.Add(-3*time.Minute), "deepseek-flash"),
+		recordAt(testNow.Add(-2*time.Minute), "deepseek-flash"),
+		recordAt(testNow.Add(-time.Minute), "deepseek-flash"),
+	}
+	records[0].UserAgent = "codex-tui/0.167.0"
+	records[1].UserAgent = "codex-exec/0.167.0"
+	records[2].UserAgent = "Codex Desktop/0.154.0"
+	records[3].UserAgent = ""
+	for _, record := range records {
+		if err := store.Insert(ctx, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		UPDATE usage_log SET client = CASE
+			WHEN user_agent LIKE 'codex-tui%' THEN 'codex-tui'
+			WHEN user_agent LIKE 'codex-exec%' THEN 'codex-exec'
+			WHEN user_agent LIKE 'Codex Desktop%' THEN 'Codex Desktop'
+			ELSE 'codex-exec' END`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO meta (key, value) VALUES ('client_rule_version', '2')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO meta (key, value) VALUES ('client_inference_version', '1')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PerformStartupMaintenance(ctx); err != nil {
+		t.Fatal(err)
+	}
+	clients, err := store.QueryClientBreakdown(ctx, 1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clients) != 1 || clients[0].Client != "codex" || clients[0].RequestCount != 4 {
+		t.Fatalf("clients after maintenance = %+v", clients)
 	}
 }
 

@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "cherno.dsmon",
   "name": "DS-mon",
-  "version": "1.0.0",
+  "version": "1.4.0",
   "author": "cherno",
-  "description": "Open the DS-mon dashboard from the bar",
+  "description": "Live DS-mon gauge status and dashboard launcher",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "DS-mon",
-    "description": "Open the DS-mon usage dashboard",
+    "description": "Mac-style gauge status icon that opens the DS-mon dashboard",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right"

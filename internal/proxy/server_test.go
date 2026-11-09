@@ -17,6 +17,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"dsmon/internal/pricing"
+	"dsmon/internal/proxy/trace"
 	"dsmon/internal/store"
 )
 
@@ -726,6 +727,78 @@ func TestServerRejectsUnknownRouteAndOversizedBody(t *testing.T) {
 	}
 }
 
+func TestServerOffloadsInlineImagesBeforeForwarding(t *testing.T) {
+	database := newProxyTestStore(t)
+	filesCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/files":
+			filesCalls++
+			body, _ := io.ReadAll(r.Body)
+			if got := r.Header.Get("Authorization"); got != "Bearer sk-real-key" {
+				t.Errorf("files authorization = %q", got)
+			}
+			if !bytes.Contains(body, []byte(`name="purpose"`)) ||
+				!bytes.Contains(body, []byte("user_data")) {
+				t.Errorf("files multipart body missing purpose: %s", body)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"id":"file-api-server-test"}`)
+		case "/v1/responses":
+			body, _ := io.ReadAll(r.Body)
+			if bytes.Contains(body, []byte("data:image")) {
+				t.Errorf("upstream still received inline image: %s", body)
+			}
+			if !bytes.Contains(body, []byte("file-api-server-test")) {
+				t.Errorf("upstream body has no file_id: %s", body)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}`)
+		default:
+			t.Errorf("unexpected upstream path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	server := newProxyTestServer(t, database, upstream.URL, func(cfg *Config) {
+		cfg.MaxRequestBytes = 1024
+	})
+	server.offload.actAbove = 10
+	server.offload.target = 5
+	client, proxyURL := proxyClient(t, server)
+	requestBody := `{"model":"deepseek-chat","input":[{"content":[{"type":"input_image","image_url":"` +
+		testImageDataURL(4096, "image/png") + `"}]}]}`
+	response := postJSON(t, client, proxyURL+"/v1/responses", requestBody)
+	body, _ := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("response = %d %s", response.StatusCode, body)
+	}
+	if filesCalls != 1 {
+		t.Fatalf("files calls = %d, want 1", filesCalls)
+	}
+	usage := waitForRequests(t, database, 1)
+	if usage.PromptTokens != 3 || usage.CompletionTokens != 2 || usage.TotalTokens != 5 {
+		t.Fatalf("recorded usage = %+v", usage)
+	}
+}
+
+func TestImageOffloadRoutesStillRejectOversizedBodiesWithoutImages(t *testing.T) {
+	database := newProxyTestStore(t)
+	server := newProxyTestServer(t, database, "http://127.0.0.1:1", func(cfg *Config) {
+		cfg.MaxRequestBytes = 64
+	})
+	client, proxyURL := proxyClient(t, server)
+	requestBody := `{"model":"deepseek-chat","input":[{"content":[{"type":"input_text","text":"` +
+		strings.Repeat("x", 128) + `"}]}]}`
+	response := postJSON(t, client, proxyURL+"/v1/responses", requestBody)
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413 after offload finds no image", response.StatusCode)
+	}
+}
+
 func TestNewServerRejectsNonLoopbackListener(t *testing.T) {
 	database := newProxyTestStore(t)
 	_, err := NewServer(Config{
@@ -756,6 +829,9 @@ func TestServerDrivesActivityAndTrafficCurves(t *testing.T) {
 	if len(activity) == 0 || activity[len(activity)-1] != 1 {
 		t.Fatalf("activity bars = %v", activity)
 	}
+	if got := server.LastActivityAt(); !got.Equal(testNow) {
+		t.Fatalf("last activity = %v, want %v", got, testNow)
+	}
 	var upload, download int
 	for _, bucket := range server.TrafficBuckets(testNow) {
 		upload += bucket.Upload
@@ -767,13 +843,46 @@ func TestServerDrivesActivityAndTrafficCurves(t *testing.T) {
 	}
 }
 
+func TestCurveStateTreatsUploadAndDownloadAsActivity(t *testing.T) {
+	current := testNow
+	curves := &curveState{
+		activity: trace.NewActivity(testNow),
+		traffic:  trace.NewTraffic(testNow),
+		now:      func() time.Time { return current },
+	}
+
+	curves.RecordRequest()
+	if !curves.lastActivityAt.Equal(testNow) {
+		t.Fatalf("request activity = %v", curves.lastActivityAt)
+	}
+
+	current = testNow.Add(time.Second)
+	curves.RecordUpload(1024)
+	if !curves.lastActivityAt.Equal(current) {
+		t.Fatalf("upload activity = %v, want %v", curves.lastActivityAt, current)
+	}
+
+	current = testNow.Add(2 * time.Second)
+	curves.RecordDownload(2048)
+	if !curves.lastActivityAt.Equal(current) {
+		t.Fatalf("download activity = %v, want %v", curves.lastActivityAt, current)
+	}
+
+	previous := curves.lastActivityAt
+	current = testNow.Add(3 * time.Second)
+	curves.RecordUpload(0)
+	if !curves.lastActivityAt.Equal(previous) {
+		t.Fatalf("zero-byte upload changed activity to %v", curves.lastActivityAt)
+	}
+}
+
 func TestServerUnifiesCloseTrafficScales(t *testing.T) {
 	database := newProxyTestStore(t)
 	server := newProxyTestServer(t, database, "http://127.0.0.1:1", nil)
 	server.curves.RecordUpload(24_000)
 	server.curves.RecordDownload(28_000)
 	frame := server.TrafficFrame(testNow, 120)
-	if frame.UpScale != 70_000 || frame.DownScale != 70_000 {
+	if frame.UpScale != 20_000 || frame.DownScale != 20_000 {
 		t.Fatalf("close scales were not unified: down=%v up=%v", frame.DownScale, frame.UpScale)
 	}
 }
@@ -784,7 +893,7 @@ func TestServerKeepsDoubleTrafficScalesIndependent(t *testing.T) {
 	server.curves.RecordUpload(20_000)
 	server.curves.RecordDownload(40_000)
 	frame := server.TrafficFrame(testNow, 120)
-	if frame.UpScale != 50_000 || frame.DownScale != 100_000 {
+	if frame.UpScale != 10_000 || frame.DownScale != 30_000 {
 		t.Fatalf("double scales should stay independent: down=%v up=%v", frame.DownScale, frame.UpScale)
 	}
 }

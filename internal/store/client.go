@@ -11,9 +11,9 @@ const (
 	// ClientBrowser 是伪装成浏览器但没有产品名的 UA 的兜底桶。
 	ClientBrowser = "浏览器"
 	// ClientRuleVersion 改动识别规则时必须加一，启动维护会据此重推导历史。
-	ClientRuleVersion = 2
+	ClientRuleVersion = 3
 	// ClientInferenceVersion 改动无 UA 历史的反推规则时必须加一。
-	ClientInferenceVersion = 1
+	ClientInferenceVersion = 2
 )
 
 var trailingVersion = regexp.MustCompile(`[-_.][0-9]+$`)
@@ -23,7 +23,7 @@ var knownClients = []struct {
 	name   string
 }{
 	{"opencode", "opencode"},
-	{"codex desktop", "Codex Desktop"},
+	{"codex desktop", "codex"},
 	{"codewhale", "codewhale"},
 }
 
@@ -78,6 +78,9 @@ func compatibilityProduct(ua string) (string, bool) {
 
 func canonicalClient(name string) string {
 	text := strings.ToLower(strings.TrimSpace(name))
+	if strings.HasPrefix(text, "codex") {
+		return "codex"
+	}
 	if match := trailingVersion.FindStringIndex(text); match != nil && match[0] > 0 {
 		text = text[:match[0]]
 	}

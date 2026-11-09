@@ -87,17 +87,24 @@
 - 路由：`/v1/chat/completions`、`/v1/responses` → OpenAI 兼容 base；
   `/v1/messages` → Anthropic base；`/v1/tools/search`、`/v1/tools/fetch` → DeepSeek tools base。
 - 鉴权改写：`Authorization` / `x-api-key` 用本地存储的 key 覆盖。
-- 限制：请求头 64KB、声明正文 20MB、并发 64、请求收包 120 秒；超限返回 431/413/503/超时断开。
+- 限制：请求头 64KB、普通正文 50MiB、图片卸载路由接包 128MiB、并发 64、请求收包 120 秒；
+  超限返回 413/431/503/超时断开。
+- 大图：40MiB 以上把内联 base64 图片上传到 DeepSeek Files API 并改用 `file_id`；
+  未降到普通 50MiB 上限内时本地返回 413。
 - SSE：逐事件 flush；上游响应的压缩字节原样透传，不让 Transport 自动解压。
 - 采集：OpenAI JSON、SSE、Anthropic 三种用量形态；Search/Fetch 成功按 ¥0.005/次记 `fixed_cost`。
-- `ActivityTrace`（20 × 6s）在“请求发出”时打点；`TrafficTrace`（保留 3600 × 0.5s，按画布宽度取可见窗口）在正文实际转发时打点。
+- `ActivityTrace` / `TrafficTrace`（均保留 3600 × 2s，按画布宽度取可见窗口）分别在
+  “请求发出”和正文实际转发时打点。
 
 当前进度（2026-11-07）：
 
 - [x] 严格路由未知路径 404；OpenAI / Anthropic / Search / Fetch 分别选上游 base；
   `GET/HEAD /v1/models` 作为不计费辅助路由透传
 - [x] 本地 key 覆盖鉴权；Anthropic 补 `anthropic-version: 2023-06-01`
-- [x] 请求头严格 64KB、正文 20MB、并发 64、收包 120s；HTTP chunked 请求可正常处理
+- [x] 请求头严格 64KB、普通正文 50MiB、图片卸载路由接包 128MiB、并发 64、收包 120s；
+  HTTP chunked 请求可正常处理
+- [x] 大图 offload：Responses / Chat / file_data 三种内联图片改写，Files API 上传、内存缓存、
+  失效 id 清理和上传失败降级
 - [x] `Transport.DisableCompression=true`，压缩字节与 `Content-Encoding` / `Content-Length` 原样透传
 - [x] 分析路径独立解压 gzip / deflate，压缩响应仍能提取 usage；br 只透传、不分析
 - [x] SSE 每块转发后 flush；HTTP handler 不缓存整段响应
@@ -127,7 +134,7 @@
 - [ ] DSH 把 base URL 指到 `http://127.0.0.1:18080`，普通请求和 SSE 都正常。
 - 库里每行 token 数与上游返回一致；`prompt = hit + miss` 的约定成立。
 - 压缩响应（gzip/br）客户端能正常解压，不出现 `incorrect header check` / `terminated`。
-- 活动曲线在请求发出后 1 秒内出现；流量曲线上下行都有形状。
+- 活动曲线在请求发出后 2 秒内出现；流量曲线上下行都有形状。
 
 ## Phase 3 — 余额（已完成）
 
@@ -183,14 +190,26 @@
 - [x] `internal/ipc`：Unix socket 客户端/服务端，`stats` / `trace` / `series` /
   `requests` / `pricing`
 - [x] 概览：余额卡、24h/7d 趋势、今日指标、活动曲线、流量曲线、最近请求
+- [x] 余额 24h/7d 趋势保持完整时间窗；覆盖充足时无采样区间留空，覆盖不足时放大实际历史并在
+  标签显示 `24h·2.5h` / `7d·2.5h`
 - [x] 概览流量面板按 btop Net 重做：上下镜像盲文画布、上下行各自基线、居中 download/upload 统计框、Top/Total 累计量；活动位于账户行右侧 1/3，流量独占下一行，渐变取当前 btop 主题
-- [x] 流量曲线改为 btop 滑动窗口：每个点列一个 0.5 秒桶，窄窗只保留最近样本，宽窗右对齐留空，最新桶贴右、历史左移；上下行各用一条基线做原始桶面积填充，不做平滑、插值或拉伸
+- [x] 流量曲线改为滑动窗口：每个点列一个 2 秒桶，窄窗只保留最近样本，宽窗右对齐留空，最新桶贴右、历史左移；上下行各用一条基线做原始桶面积填充，不做平滑、插值或拉伸
 - [x] 量程按十进制就近取整（10K/50K 步长），标签显示 30K/100K/150K；流量统计子框边框改用 btop `div_line` 灰
 - [x] 上下行量程相差不到一倍时统一到较大值（60K/70K → 70K），正好 2 倍仍保持独立
 - [x] 活动曲线改用 Catmull-Rom 平滑插值，消除桶间线性折线的尖角
 - [x] 用量：6 个固定区间、模型/客户端分组、堆叠柱状图、分系列明细表
+- [x] 用量页区间使用强调色上标数字，维度选择使用 `by [model] client`；堆叠柱按 series 稳定配色
+- [x] `codex-*` 客户端统一归并为 `codex`，启动维护重推导历史 client
+- [x] 版本号由 `internal/version/VERSION` 单一维护，`make bump-version` 自动递增 patch 并按
+  0–99 规则进位
+- [x] 流量采样桶和 TUI tick 均改为 2 秒；3600 个流量桶保留约 2 小时
+- [x] 活动曲线改为 3600 × 2s 宽度驱动窗口，每个点列一个桶，最新数据贴右
+- [x] TUI 恢复静态 `● Online`，不承载图标动效
+- [x] Omarchy 栏使用 Mac 仪表/警报资产：保留 siren、warning、gauge 三格与指针时间轴，
+  无请求时指针回到左侧低点；新增 `dsmon status --json`
 - [x] 请求：100 条分页、选中行详情；计费：修订数/生效时间/来源只读摘要
 - [x] 帮助页、断线/空库/单条请求状态；`NO_COLOR` 与 `--ascii` 块字符回退
+- [x] TUI 配色跟随 Omarchy 当前 btop 主题，主题切换后运行中自动刷新，缺失时回退 Tokyo Night
 - [x] 固定 40/80/200 列画布测试，其余页面在 80×24、200×60 下逐行校验宽度
 - [x] 真实 daemon + 主库联调；systemd 重启后 IPC/TUI 可读取新余额与历史请求
 - [x] `s` 设置入口（用 bubbletea `ExecProcess` 打开 `dsmon settings`）
@@ -250,7 +269,8 @@
   `LoadCredentialEncrypted` 注入；环境变量仍可覆盖
 - [x] `systemctl --user enable --now dsmon.service` 与 `loginctl enable-linger cherno`
 - [x] 重启服务后 PID 变化、socket/端口恢复、余额采样继续写入
-- [x] 可选 Omarchy 状态栏入口 `packaging/omarchy/cherno.dsmon`，点击打开/聚焦 TUI
+- [x] 可选 Omarchy 状态栏组件 `packaging/omarchy/cherno.dsmon`：常驻显示工作/空闲/错误状态，
+  点击打开/聚焦 TUI
 - [ ] `dsmon install` / `dsmon uninstall` 自动安装与卸载
 - [ ] `PKGBUILD` 或 `make install`
 

@@ -13,6 +13,7 @@ import (
 	"dsmon/internal/ipc"
 	"dsmon/internal/proxy/trace"
 	"dsmon/internal/store"
+	"dsmon/internal/version"
 )
 
 type tone int
@@ -35,23 +36,6 @@ const (
 	toneDivLine
 )
 
-var toneStyles = map[tone]lipgloss.Style{
-	toneTitle:       lipgloss.NewStyle().Foreground(lipgloss.Color("#a9b1d6")).Bold(true),
-	toneAccent:      lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7")),
-	toneMuted:       lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89")),
-	toneOK:          lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a")),
-	toneWarn:        lipgloss.NewStyle().Foreground(lipgloss.Color("#e0af68")),
-	toneError:       lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")),
-	toneDown:        lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")),
-	toneUp:          lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7")),
-	toneBoxAccount:  lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a")),
-	toneBoxActivity: lipgloss.NewStyle().Foreground(lipgloss.Color("#ad8ee6")),
-	toneBoxTraffic:  lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")),
-	toneBoxRequests: lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7")),
-	toneSelected:    lipgloss.NewStyle().Reverse(true),
-	toneDivLine:     lipgloss.NewStyle().Foreground(lipgloss.Color("#414868")),
-}
-
 type uiLine struct {
 	text       string
 	tone       tone
@@ -73,15 +57,21 @@ type renderer struct {
 	limit int
 	color bool
 	ascii bool
+	theme palette
 	lines []uiLine
 }
 
-func newRenderer(width, limit int, ascii, color bool) *renderer {
+func newRenderer(width, limit int, ascii, color bool, themes ...palette) *renderer {
+	theme := fallbackPalette()
+	if len(themes) > 0 {
+		theme = themes[0]
+	}
 	return &renderer{
 		width: maxInt(1, width),
 		limit: maxInt(0, limit),
 		color: color,
 		ascii: ascii,
+		theme: theme,
 	}
 }
 
@@ -156,28 +146,28 @@ func (r *renderer) finish() []string {
 			result = append(result, line.text)
 			continue
 		}
-		text := renderTone(line.text, line.tone, r.color)
+		text := renderTone(line.text, line.tone, r.color, r.theme)
 		if len(line.segments) > 0 {
-			text = renderSegments(line.segments, r.color)
+			text = renderSegments(line.segments, r.color, r.theme)
 		}
-		result = append(result, renderTone(line.prefix, line.borderTone, r.color)+
+		result = append(result, renderTone(line.prefix, line.borderTone, r.color, r.theme)+
 			text+
-			renderTone(line.suffix, line.borderTone, r.color))
+			renderTone(line.suffix, line.borderTone, r.color, r.theme))
 	}
 	return result
 }
 
-func renderTone(text string, valueTone tone, color bool) string {
+func renderTone(text string, valueTone tone, color bool, theme palette) string {
 	if text == "" || !color || valueTone == toneNormal {
 		return text
 	}
-	if style, ok := toneStyles[valueTone]; ok {
+	if style, ok := theme.style(valueTone); ok {
 		return style.Render(text)
 	}
 	return text
 }
 
-func renderSegments(segments []uiSegment, color bool) string {
+func renderSegments(segments []uiSegment, color bool, theme palette) string {
 	if !color {
 		return segmentsText(segments)
 	}
@@ -187,9 +177,52 @@ func renderSegments(segments []uiSegment, color bool) string {
 			builder.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(segment.color)).Render(segment.text))
 			continue
 		}
-		builder.WriteString(renderTone(segment.text, segment.tone, color))
+		builder.WriteString(renderTone(segment.text, segment.tone, color, theme))
 	}
 	return builder.String()
+}
+
+func (p palette) style(valueTone tone) (lipgloss.Style, bool) {
+	var color string
+	switch valueTone {
+	case toneTitle:
+		color = p.Title
+	case toneAccent:
+		color = p.Accent
+	case toneMuted:
+		color = p.Muted
+	case toneOK:
+		color = p.OK
+	case toneWarn:
+		color = p.Warn
+	case toneError:
+		color = p.Error
+	case toneDown:
+		color = p.Down
+	case toneUp:
+		color = p.Up
+	case toneBoxAccount:
+		color = p.BoxAccount
+	case toneBoxActivity:
+		color = p.BoxActivity
+	case toneBoxTraffic:
+		color = p.BoxTraffic
+	case toneBoxRequests:
+		color = p.BoxRequests
+	case toneSelected:
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color(p.SelectedFG)).
+			Background(lipgloss.Color(p.SelectedBG)), true
+	case toneDivLine:
+		color = p.DivLine
+	default:
+		return lipgloss.Style{}, false
+	}
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+	if valueTone == toneTitle {
+		style = style.Bold(true)
+	}
+	return style, true
 }
 
 func fitSegments(segments []uiSegment, width int) []uiSegment {
@@ -258,7 +291,7 @@ func (r *renderer) panel(title string, height int, borderTone tone, body func(*r
 		r.add(borderTone, "%s", panelTopLine(r.width, r.ascii))
 	}
 	inner := newRenderer(maxInt(0, r.width-lipgloss.Width(left)-lipgloss.Width(right)),
-		height-2, r.ascii, r.color)
+		height-2, r.ascii, r.color, r.theme)
 	if body != nil {
 		body(inner)
 	}
@@ -387,13 +420,11 @@ func renderModel(m *Model) string {
 	width := maxInt(1, m.width)
 	height := maxInt(1, m.height)
 	header := m.renderHeader(width)
-	footer := m.renderFooter(width)
-	bodyHeight := height - len(header) - len(footer)
+	bodyHeight := height - len(header)
 	body := m.renderBody(width, maxInt(0, bodyHeight))
 	lines := make([]string, 0, height)
 	lines = append(lines, header...)
 	lines = append(lines, body...)
-	lines = append(lines, footer...)
 	if len(lines) > height {
 		lines = lines[:height]
 	}
@@ -404,53 +435,90 @@ func renderModel(m *Model) string {
 }
 
 func (m *Model) renderHeader(width int) []string {
-	stateText, stateTone := "● 正常", toneOK
+	stateText, stateTone := "● Online", toneOK
 	if m.connectionErr != "" {
-		stateText, stateTone = "● 未连接", toneError
+		stateText, stateTone = "● Offline", toneError
 	} else if !m.stats.Health {
-		stateText, stateTone = "● 异常", toneError
+		stateText, stateTone = "● Error", toneError
 	} else if m.stats.Balance.Error != "" {
-		stateText, stateTone = "● 余额异常", toneWarn
+		stateText, stateTone = "● Balance error", toneWarn
 	}
-	balanceText := "余额 --"
+	balanceText := "Balance --"
 	if m.stats.Balance.Has {
-		balanceText = "余额 " + formatBalanceMoney(m.stats.Balance.Total)
+		balanceText = "Balance " + formatBalanceMoney(m.stats.Balance.Total)
 	}
 	address := m.stats.ListenAddr
 	if address == "" {
 		address = "127.0.0.1:18080"
 	}
 
-	header := newRenderer(width, 2, m.ascii, m.color)
+	header := newRenderer(width, 2, m.ascii, m.color, m.theme)
 	if width >= 80 {
-		header.add(stateTone, " DS-mon  %s  %s  %s", stateText, address, balanceText)
+		header.add(stateTone, " DS-mon %s  %s  %s  %s",
+			version.Current, stateText, address, balanceText)
 	} else {
-		header.add(stateTone, " DS-mon  %s  %s", stateText, balanceText)
+		header.add(stateTone, " DS-mon %s  %s  %s",
+			version.Current, stateText, balanceText)
 	}
-	var tabs []string
-	for index, title := range pageTitles {
-		if Page(index) == m.page {
-			tabs = append(tabs, "["+title+"]")
-		} else {
-			tabs = append(tabs, " "+title+" ")
-		}
-	}
-	header.add(toneAccent, " %s", strings.Join(tabs, "  "))
+	header.addSegments(toneNormal, m.navigationSegments(width)...)
 	return header.finish()
 }
 
-func (m *Model) renderFooter(width int) []string {
-	text := " Tab 切页  1-6 区间  m/c 分组  j/k 选择  [ ] 翻页  r 刷新  s 设置  ? 帮助  q 退出"
-	if m.help {
-		text = " Esc/? 返回  q 退出"
-	} else if m.editingDates {
-		text = " Tab 切换  Enter 确认  Esc 取消"
-	} else if width < 80 {
-		text = " Tab 切页  1-6 区间  m/c 分组  s 设置  ? 帮助  q 退出"
+const navigationTextColor = "#ffffff"
+
+func (m *Model) navigationSegments(width int) []uiSegment {
+	segments := []uiSegment{{text: " ", tone: toneNormal}}
+	for index, title := range pageTitles {
+		if index > 0 {
+			segments = append(segments, uiSegment{text: "  ", tone: toneNormal})
+		}
+		segments = append(segments,
+			shortcutWord(title, pageShortcutKeys[index], Page(index) == m.page, m.theme.Accent)...)
 	}
-	footer := newRenderer(width, 1, m.ascii, m.color)
-	footer.add(toneMuted, " %s", text)
-	return footer.finish()
+	leftWidth := lipgloss.Width(segmentsText(segments))
+
+	actions := make([]uiSegment, 0, 8)
+	for index, item := range []struct {
+		text string
+		key  byte
+	}{
+		{text: "settings", key: 's'},
+		{text: "help", key: 'h'},
+		{text: "quit", key: 'q'},
+	} {
+		if index > 0 {
+			actions = append(actions, uiSegment{text: "  ", tone: toneNormal})
+		}
+		actions = append(actions, shortcutWord(item.text, item.key, false, m.theme.Accent)...)
+	}
+	rightWidth := lipgloss.Width(segmentsText(actions))
+	if gap := width - leftWidth - rightWidth; gap >= 1 {
+		segments = append(segments, uiSegment{text: strings.Repeat(" ", gap), tone: toneNormal})
+		segments = append(segments, actions...)
+	}
+	return segments
+}
+
+func shortcutWord(text string, key byte, active bool, accent string) []uiSegment {
+	index := strings.IndexByte(text, key)
+	if index < 0 {
+		index = 0
+	}
+	segments := make([]uiSegment, 0, 6)
+	if active {
+		segments = append(segments, uiSegment{text: "[", color: navigationTextColor})
+	}
+	if index > 0 {
+		segments = append(segments, uiSegment{text: text[:index], color: navigationTextColor})
+	}
+	segments = append(segments, uiSegment{text: text[index : index+1], tone: toneAccent, color: accent})
+	if index+1 < len(text) {
+		segments = append(segments, uiSegment{text: text[index+1:], color: navigationTextColor})
+	}
+	if active {
+		segments = append(segments, uiSegment{text: "]", color: navigationTextColor})
+	}
+	return segments
 }
 
 func (m *Model) renderBody(width, height int) []string {
@@ -473,17 +541,14 @@ func (m *Model) renderBody(width, height int) []string {
 }
 
 func (m *Model) renderOverview(width, height int) []string {
-	r := newRenderer(width, height, m.ascii, m.color)
+	r := newRenderer(width, height, m.ascii, m.color, m.theme)
 	statusHeight := minInt(7, maxInt(6, height/6))
-	activityTitle := "活动 · 2 分钟 · 3 req/格"
-	if width >= 100 {
-		activityTitle += " · 最近 120 秒"
-	}
 	if r.width >= 60 {
 		// 账户占左侧 2/3，活动占右侧 1/3；流量独占下一行拿满宽度。
 		activityWidth := r.width / 3
 		accountWidth := r.width - 1 - activityWidth
-		account := m.renderPanelBlock("账户", accountWidth, statusHeight, toneBoxAccount, m.appendOverviewStatus)
+		activityTitle := m.activityTitle(maxInt(1, activityWidth-2))
+		account := m.renderPanelBlock("Account", accountWidth, statusHeight, toneBoxAccount, m.appendOverviewStatus)
 		activity := m.renderPanelBlock(activityTitle, activityWidth, statusHeight, toneBoxActivity, func(panel *renderer) {
 			m.appendActivityChart(panel, panel.remaining())
 		})
@@ -491,7 +556,7 @@ func (m *Model) renderOverview(width, height int) []string {
 			r.addRaw(account[row] + " " + activity[row])
 		}
 	} else {
-		r.panel("账户", statusHeight, toneBoxAccount, m.appendOverviewStatus)
+		r.panel("Account", statusHeight, toneBoxAccount, m.appendOverviewStatus)
 	}
 
 	remaining := r.remaining()
@@ -513,6 +578,7 @@ func (m *Model) renderOverview(width, height int) []string {
 			})
 		}
 	} else if chartSpace >= 6 {
+		activityTitle := m.activityTitle(maxInt(1, r.width-2))
 		activityHeight := chartSpace / 2
 		trafficHeight := chartSpace - activityHeight
 		if chartSpace >= 9 {
@@ -531,16 +597,29 @@ func (m *Model) renderOverview(width, height int) []string {
 			m.appendTrafficChart(panel, panel.remaining())
 		})
 	} else if chartSpace > 0 {
+		activityTitle := m.activityTitle(maxInt(1, r.width-2))
 		r.panel(activityTitle, chartSpace, toneBoxActivity, func(panel *renderer) {
 			m.appendActivityChart(panel, panel.remaining())
 		})
 	}
 	if recentHeight > 0 {
-		r.panel("最近请求", recentHeight, toneBoxRequests, func(panel *renderer) {
+		r.panel("Recent requests", recentHeight, toneBoxRequests, func(panel *renderer) {
 			m.appendRecentRows(panel, panel.remaining())
 		})
 	}
 	return r.finish()
+}
+
+func (m *Model) activityTitle(width int) string {
+	bucketSeconds := float64(m.trace.ActivityBucketSecs)
+	if bucketSeconds <= 0 {
+		bucketSeconds = trace.DefaultActivityBucketSeconds.Seconds()
+	}
+	seconds := maxInt(1, int(math.Round(float64(maxInt(1, width)*2)*bucketSeconds)))
+	if width < 28 {
+		return fmt.Sprintf("Activity · %ds", seconds)
+	}
+	return fmt.Sprintf("Activity · %d sec · 3 req/cell", seconds)
 }
 
 func (m *Model) trafficTitle(width, height int, showScale bool) string {
@@ -554,16 +633,16 @@ func (m *Model) trafficTitle(width, height int, showScale bool) string {
 		bucketSeconds = trace.DefaultTrafficBucketSeconds.Seconds()
 	}
 	seconds := maxInt(1, int(math.Round(float64(graphWidth*2)*bucketSeconds)))
-	title := fmt.Sprintf("流量 · %d 秒", seconds)
+	title := fmt.Sprintf("Traffic · %d sec", seconds)
 	if showScale {
-		title += " · 自动量程"
+		title += " · auto scale"
 	}
 	return title
 }
 
 func (m *Model) renderPanelBlock(title string, width, height int, borderTone tone,
 	body func(*renderer)) []string {
-	panel := newRenderer(width, height, m.ascii, m.color)
+	panel := newRenderer(width, height, m.ascii, m.color, m.theme)
 	panel.panel(title, height, borderTone, body)
 	return panel.finish()
 }
@@ -574,7 +653,7 @@ func (m *Model) appendOverviewStatus(r *renderer) {
 		m.stats.Balance.Total <= m.stats.BalanceLowThreshold {
 		balanceTone = toneWarn
 	}
-	r.add(balanceTone, " 余额  %s", balanceValue(m.stats.Balance))
+	r.add(balanceTone, " Balance  %s", balanceValue(m.stats.Balance))
 	if r.remaining() > 0 {
 		r.add(toneMuted, "%s", balanceDetails(m.stats.Balance, r.width))
 	}
@@ -587,10 +666,10 @@ func (m *Model) appendOverviewStatus(r *renderer) {
 	today := m.stats.Today
 	unpriced := ""
 	if today.UnpricedRequests > 0 {
-		unpriced = fmt.Sprintf(" · 未计价 %d", today.UnpricedRequests)
+		unpriced = fmt.Sprintf(" · %d unpriced", today.UnpricedRequests)
 	}
 	if r.remaining() > 0 {
-		r.add(toneAccent, " 今日  %s 请求 · %s tokens · 命中 %.1f%% · 花费 %s%s",
+		r.add(toneAccent, " Today  %s requests · %s tokens · %.1f%% hit · %s spent%s",
 			formatCount(today.Requests), formatCount(today.TotalTokens), today.CacheHitRate,
 			formatMoney(today.Cost), unpriced)
 	}
@@ -608,20 +687,20 @@ func balanceValue(balance ipc.Balance) string {
 
 func balanceDetails(balance ipc.Balance, width int) string {
 	if balance.Error != "" {
-		return " 查询失败: " + balance.Error
+		return " Query failed: " + balance.Error
 	}
 	if !balance.Has {
-		return " 等待第一次余额查询"
+		return " Waiting for first balance query"
 	}
-	text := fmt.Sprintf(" 充值 %s · 赠送 %s", formatBalanceMoney(balance.ToppedUp), formatBalanceMoney(balance.Granted))
+	text := fmt.Sprintf(" Topped up %s · Granted %s", formatBalanceMoney(balance.ToppedUp), formatBalanceMoney(balance.Granted))
 	if balance.LastSuccessUnix > 0 {
-		text += " · 更新 " + time.Unix(balance.LastSuccessUnix, 0).Format("15:04:05")
+		text += " · Updated " + time.Unix(balance.LastSuccessUnix, 0).Format("15:04:05")
 	}
 	if balance.Failures > 0 {
-		text += fmt.Sprintf(" · 连续失败 %d 次", balance.Failures)
+		text += fmt.Sprintf(" · %d consecutive failures", balance.Failures)
 	}
 	if width < 80 {
-		return fmt.Sprintf(" 充值 %s · 赠送 %s", formatBalanceMoney(balance.ToppedUp), formatBalanceMoney(balance.Granted))
+		return fmt.Sprintf(" Topped up %s · Granted %s", formatBalanceMoney(balance.ToppedUp), formatBalanceMoney(balance.Granted))
 	}
 	return text
 }
@@ -633,8 +712,10 @@ func (m *Model) balanceTrendLine(width int) string {
 func (m *Model) balanceTrendSegments(width int) []uiSegment {
 	points24, points7 := m.stats.Balance.Trend24h, m.stats.Balance.Trend7d
 	if len(points24) == 0 && len(points7) == 0 {
-		return []uiSegment{{text: " 余额  24h --  7d --", tone: toneNormal}}
+		return []uiSegment{{text: " Balance  24h --  7d --", tone: toneNormal}}
 	}
+	label24 := balanceTrendLabel("24h", points24, 24*time.Hour)
+	label7 := balanceTrendLabel("7d", points7, 7*24*time.Hour)
 	range24, range7 := balanceRangeLabel(points24), balanceRangeLabel(points7)
 	showRanges := width >= 64
 	showAxis := width >= 56
@@ -642,9 +723,9 @@ func (m *Model) balanceTrendSegments(width int) []uiSegment {
 	if len(points7) > 0 {
 		series = 2
 	}
-	fixedWidth := lipgloss.Width(" 余额  24h ")
+	fixedWidth := lipgloss.Width(" Balance  " + label24 + " ")
 	if series == 2 {
-		fixedWidth += lipgloss.Width("  7d ")
+		fixedWidth += lipgloss.Width("  " + label7 + " ")
 	}
 	if showRanges {
 		fixedWidth += lipgloss.Width(range24) + 1
@@ -653,36 +734,104 @@ func (m *Model) balanceTrendSegments(width int) []uiSegment {
 		}
 	}
 	if showAxis {
-		fixedWidth += lipgloss.Width("  时间→")
+		fixedWidth += lipgloss.Width("  Time→")
 	}
 	sparkWidth := minInt(24, maxInt(1, (width-fixedWidth)/series))
 
-	segments := []uiSegment{{text: " 余额  24h ", tone: toneNormal}}
+	segments := []uiSegment{{text: " Balance  " + label24 + " ", tone: toneNormal}}
 	if showRanges && range24 != "" {
 		segments = append(segments, uiSegment{text: range24 + " ", tone: toneMuted})
 	}
-	segments = append(segments, balanceSparklineSegments(points24, sparkWidth, !m.ascii)...)
+	segments = append(segments, m.balanceSparklineSegments(points24, sparkWidth, !m.ascii, 24*time.Hour)...)
 	if len(points7) > 0 {
-		segments = append(segments, uiSegment{text: "  7d ", tone: toneNormal})
+		segments = append(segments, uiSegment{text: "  " + label7 + " ", tone: toneNormal})
 		if showRanges && range7 != "" {
 			segments = append(segments, uiSegment{text: range7 + " ", tone: toneMuted})
 		}
-		segments = append(segments, balanceSparklineSegments(points7, sparkWidth, !m.ascii)...)
+		segments = append(segments, m.balanceSparklineSegments(points7, sparkWidth, !m.ascii,
+			7*24*time.Hour)...)
 	}
 	if showAxis {
-		segments = append(segments, uiSegment{text: "  时间→", tone: toneMuted})
+		segments = append(segments, uiSegment{text: "  Time→", tone: toneMuted})
 	}
 	return segments
 }
 
-func balanceRangeLabel(points []ipc.BalancePoint) string {
-	if len(points) == 0 {
-		return ""
+func balanceTrendLabel(name string, points []ipc.BalancePoint, window time.Duration) string {
+	coverage := balanceCoverage(points)
+	if coverage <= 0 || window <= 0 || coverage >= window*3/4 {
+		return name
 	}
-	minimum, maximum := points[0].Value, points[0].Value
-	for _, point := range points[1:] {
+	return name + "·" + compactBalanceCoverage(coverage)
+}
+
+func balanceCoverage(points []ipc.BalancePoint) time.Duration {
+	if len(points) == 0 {
+		return 0
+	}
+	interval := int64(0)
+	if len(points) > 1 && points[1].Unix > points[0].Unix {
+		interval = points[1].Unix - points[0].Unix
+	}
+	first, last := int64(0), int64(0)
+	haveValue := false
+	for _, point := range points {
+		if point.Missing {
+			continue
+		}
+		if !haveValue {
+			first = point.Unix
+			haveValue = true
+		}
+		last = point.Unix
+	}
+	if !haveValue {
+		return 0
+	}
+	return time.Duration(last-first+interval) * time.Second
+}
+
+func compactBalanceCoverage(coverage time.Duration) string {
+	if coverage <= 0 {
+		return "--"
+	}
+	if coverage < time.Hour {
+		return fmt.Sprintf("%dm", int(math.Round(coverage.Minutes())))
+	}
+	hours := coverage.Hours()
+	if hours < 10 {
+		value := fmt.Sprintf("%.1f", hours)
+		value = strings.TrimSuffix(value, ".0")
+		return value + "h"
+	}
+	if hours < 48 {
+		return fmt.Sprintf("%.0fh", hours)
+	}
+	days := hours / 24
+	value := fmt.Sprintf("%.0f", days)
+	if days < 10 {
+		value = strings.TrimSuffix(fmt.Sprintf("%.1f", days), ".0")
+	}
+	return value + "d"
+}
+
+func balanceRangeLabel(points []ipc.BalancePoint) string {
+	minimum, maximum := 0.0, 0.0
+	haveValue := false
+	for _, point := range points {
+		if point.Missing {
+			continue
+		}
+		if !haveValue {
+			minimum, maximum = point.Value, point.Value
+			haveValue = true
+			continue
+		}
 		minimum = math.Min(minimum, point.Value)
 		maximum = math.Max(maximum, point.Value)
+	}
+	if !haveValue {
+		return ""
 	}
 	return compactBalanceValue(minimum) + "–" + compactBalanceValue(maximum)
 }
@@ -703,59 +852,97 @@ func balanceSparkline(points []ipc.BalancePoint, width int, braille bool) string
 }
 
 func balanceSparklineSegments(points []ipc.BalancePoint, width int, braille bool) []uiSegment {
+	return balanceSparklineSegmentsWithPalette(points, width, braille, fallbackPalette())
+}
+
+func (m *Model) balanceSparklineSegments(points []ipc.BalancePoint, width int, braille bool,
+	windows ...time.Duration) []uiSegment {
+	return balanceSparklineSegmentsWithPalette(points, width, braille, m.theme, windows...)
+}
+
+func balanceSparklineSegmentsWithPalette(points []ipc.BalancePoint, width int,
+	braille bool, theme palette, windows ...time.Duration) []uiSegment {
 	if len(points) == 0 || width <= 0 {
 		return []uiSegment{{text: "--", tone: toneNormal}}
+	}
+	if len(windows) > 0 && windows[0] > 0 {
+		coverage := balanceCoverage(points)
+		if coverage > 0 && coverage < windows[0]*3/4 {
+			points = compactBalancePoints(points)
+		}
 	}
 	sampleWidth := width
 	if braille {
 		sampleWidth *= 2
 	}
-	values := make([]float64, 0, minInt(sampleWidth, len(points)))
-	step := float64(maxInt(1, len(points)-1)) / float64(maxInt(1, sampleWidth-1))
-	for column := 0; column < sampleWidth && len(points) > 0; column++ {
-		index := int(math.Round(float64(column) * step))
+	values := make([]float64, sampleWidth)
+	valid := make([]bool, sampleWidth)
+	haveValue := false
+	for column := 0; column < sampleWidth; column++ {
+		index := int(float64(column) / float64(sampleWidth) * float64(len(points)))
 		if index >= len(points) {
 			index = len(points) - 1
 		}
-		values = append(values, points[index].Value)
+		if points[index].Missing {
+			continue
+		}
+		values[column] = points[index].Value
+		valid[column] = true
+		haveValue = true
 	}
-	if len(values) == 0 {
+	if !haveValue {
 		return []uiSegment{{text: "--", tone: toneNormal}}
 	}
 	if braille {
-		return brailleSparklineSegments(values, width)
+		return brailleBalanceSparklineSegments(values, valid, width, theme)
 	}
-	return []uiSegment{{text: sparkline(values), tone: toneNormal}}
+	return asciiBalanceSparklineSegments(values, valid)
 }
 
-func brailleSparkline(values []float64, width int) string {
-	return segmentsText(brailleSparklineSegments(values, width))
+func compactBalancePoints(points []ipc.BalancePoint) []ipc.BalancePoint {
+	result := make([]ipc.BalancePoint, 0, len(points))
+	for _, point := range points {
+		if !point.Missing {
+			result = append(result, point)
+		}
+	}
+	return result
 }
 
-func brailleSparklineSegments(values []float64, width int) []uiSegment {
+func brailleBalanceSparklineSegments(values []float64, valid []bool, width int, theme palette) []uiSegment {
 	if len(values) == 0 || width <= 0 {
 		return []uiSegment{{text: "--", tone: toneNormal}}
 	}
-	minimum, maximum := values[0], values[0]
-	for _, value := range values[1:] {
+	minimum, maximum := 0.0, 0.0
+	haveValue := false
+	for index, value := range values {
+		if !valid[index] {
+			continue
+		}
+		if !haveValue {
+			minimum, maximum = value, value
+			haveValue = true
+			continue
+		}
 		minimum = math.Min(minimum, value)
 		maximum = math.Max(maximum, value)
 	}
 	canvas := newBrailleCanvas(width, 1)
 	ratios := make([]float64, width)
+	dotExists := make([]bool, width)
 	for x := 0; x < width*2; x++ {
-		index := int(math.Round(float64(x) / float64(maxInt(1, width*2-1)) * float64(len(values)-1)))
-		if index >= len(values) {
-			index = len(values) - 1
+		if x >= len(values) || !valid[x] {
+			continue
 		}
 		ratio := 0.5
 		level := 2
 		if maximum > minimum {
-			ratio = math.Min(1, math.Max(0, (values[index]-minimum)/(maximum-minimum)))
+			ratio = math.Min(1, math.Max(0, (values[x]-minimum)/(maximum-minimum)))
 			level = 3 - int(math.Round(ratio*3))
 		}
-		if ratio > ratios[x/2] {
+		if !dotExists[x/2] || ratio > ratios[x/2] {
 			ratios[x/2] = ratio
+			dotExists[x/2] = true
 		}
 		for y := level; y < 4; y++ {
 			canvas.dot(x, y)
@@ -764,21 +951,67 @@ func brailleSparklineSegments(values []float64, width int) []uiSegment {
 	runes := []rune(canvas.rows()[0])
 	segments := make([]uiSegment, 0, width)
 	for index := 0; index < len(runes); index++ {
+		if !dotExists[index] {
+			segments = append(segments, uiSegment{text: " ", tone: toneNormal})
+			continue
+		}
 		segments = append(segments, uiSegment{
 			text:  string(runes[index]),
 			tone:  toneNormal,
-			color: trendGradientColor(ratios[index]),
+			color: theme.trendGradientColor(ratios[index]),
 		})
 	}
 	return segments
 }
 
+func asciiBalanceSparklineSegments(values []float64, valid []bool) []uiSegment {
+	if len(values) == 0 {
+		return []uiSegment{{text: "--", tone: toneNormal}}
+	}
+	minimum, maximum := 0.0, 0.0
+	haveValue := false
+	for index, value := range values {
+		if !valid[index] {
+			continue
+		}
+		if !haveValue {
+			minimum, maximum = value, value
+			haveValue = true
+			continue
+		}
+		minimum = math.Min(minimum, value)
+		maximum = math.Max(maximum, value)
+	}
+	if !haveValue {
+		return []uiSegment{{text: strings.Repeat(" ", len(values)), tone: toneNormal}}
+	}
+	blocks := []rune("▁▂▃▄▅▆▇█")
+	var builder strings.Builder
+	for index, value := range values {
+		if !valid[index] {
+			builder.WriteByte(' ')
+			continue
+		}
+		block := len(blocks) / 2
+		if maximum > minimum {
+			block = int(math.Round((value - minimum) / (maximum - minimum) *
+				float64(len(blocks)-1)))
+		}
+		builder.WriteRune(blocks[block])
+	}
+	return []uiSegment{{text: builder.String(), tone: toneNormal}}
+}
+
 func trendGradientColor(ratio float64) string {
+	return fallbackPalette().trendGradientColor(ratio)
+}
+
+func (p palette) trendGradientColor(ratio float64) string {
 	ratio = math.Min(1, math.Max(0, ratio))
 	if ratio < 0.5 {
-		return blendHexColor("#f7768e", "#e0af68", ratio*2)
+		return blendHexColor(p.TempEnd, p.TempMid, ratio*2)
 	}
-	return blendHexColor("#e0af68", "#9ece6a", (ratio-0.5)*2)
+	return blendHexColor(p.TempMid, p.TempStart, (ratio-0.5)*2)
 }
 
 func blendHexColor(from, to string, ratio float64) string {
@@ -800,11 +1033,15 @@ func parseHexColor(value string) (int, int, int) {
 }
 
 func usageBarColor(level float64) string {
+	return fallbackPalette().usageBarColor(level)
+}
+
+func (p palette) usageBarColor(level float64) string {
 	level = math.Min(1, math.Max(0, level))
 	if level < 0.5 {
-		return blendHexColor("#9ece6a", "#e0af68", level*2)
+		return blendHexColor(p.TempStart, p.TempMid, level*2)
 	}
-	return blendHexColor("#e0af68", "#f7768e", (level-0.5)*2)
+	return blendHexColor(p.TempMid, p.TempEnd, (level-0.5)*2)
 }
 
 func usageBarGlyph(index int, ascii bool) string {
@@ -829,13 +1066,27 @@ func (m *Model) appendActivityChart(r *renderer, height int) {
 		return
 	}
 	rows := RenderActivity(m.trace.Activity, chartWidth, height, traceNow(m.trace), m.trace.ActivityFullScale)
-	chartTone := toneOK
 	if !m.trace.Health {
-		chartTone = toneError
+		// 异常时保留整块红色覆盖，不把故障画成正常的绿→红渐变。
+		for _, row := range rows {
+			r.add(toneError, "  %s", row)
+		}
+		return
 	}
-	for _, row := range rows {
-		r.add(chartTone, "  %s", row)
+	for rowIndex, row := range rows {
+		color := m.theme.activityRowColor(rowIndex, height)
+		r.addSegments(toneNormal, uiSegment{
+			text: "  " + row, tone: toneNormal, color: color,
+		})
 	}
+}
+
+func (p palette) activityRowColor(row, height int) string {
+	ratio := 0.0
+	if height > 1 {
+		ratio = 1 - float64(row)/float64(height-1)
+	}
+	return p.usageBarColor(ratio)
 }
 
 func (m *Model) appendTrafficChart(r *renderer, laneHeight int) {
@@ -861,7 +1112,7 @@ func (m *Model) appendTrafficChart(r *renderer, laneHeight int) {
 	stats := trafficNetStats(frame, statsWidth, laneHeight)
 	for row := 0; row < laneHeight; row++ {
 		graphRow := rows[row]
-		color := trafficNetRowColor(row, laneHeight, false)
+		color := m.theme.trafficNetRowColor(row, laneHeight, false)
 		segments := make([]uiSegment, 0, 4)
 		if row == 0 || row == laneHeight-1 {
 			scale := trace.FormatNetScale(frame.DownScale)
@@ -894,6 +1145,10 @@ func trafficStatsWidth(width, height int) int {
 }
 
 func trafficNetRowColor(row, height int, ascii bool) string {
+	return fallbackPalette().trafficNetRowColor(row, height, ascii)
+}
+
+func (p palette) trafficNetRowColor(row, height int, ascii bool) string {
 	if ascii || height <= 0 {
 		return ""
 	}
@@ -904,21 +1159,24 @@ func trafficNetRowColor(row, height int, ascii bool) string {
 		if downCells > 1 {
 			ratio = 1 - float64(row)/float64(downCells-1)
 		}
-		return trafficGradientColor(ratio, false)
+		return p.trafficGradientColor(ratio, false)
 	}
 	ratio := 1.0
 	if upCells > 1 {
 		ratio = float64(row-downCells) / float64(upCells-1)
 	}
-	return trafficGradientColor(ratio, true)
+	return p.trafficGradientColor(ratio, true)
 }
 
 func trafficGradientColor(ratio float64, upload bool) string {
+	return fallbackPalette().trafficGradientColor(ratio, upload)
+}
+
+func (p palette) trafficGradientColor(ratio float64, upload bool) string {
 	ratio = math.Min(1, math.Max(0, ratio))
-	// 与 Omarchy 当前 btop 主题一致：下载黄→粉，上传绿→青→蓝。
-	start, middle, end := "#e0af68", "#f7768e", "#f7768e"
+	start, middle, end := p.DownloadStart, p.DownloadMid, p.DownloadEnd
 	if upload {
-		start, middle, end = "#9ece6a", "#449dab", "#7aa2f7"
+		start, middle, end = p.UploadStart, p.UploadMid, p.UploadEnd
 	}
 	if ratio < 0.5 {
 		return blendHexColor(start, middle, ratio*2)
@@ -1205,7 +1463,7 @@ func (m *Model) appendRecentRows(r *renderer, limit int) {
 	columns := requestColumns(r.width)
 	r.add(toneMuted, " %s", formatColumns(columnTitles(columns), columns))
 	if len(m.stats.Recent) == 0 {
-		r.add(toneMuted, " 暂无请求记录")
+		r.add(toneMuted, " No requests yet")
 		return
 	}
 	for index := 0; index < len(m.stats.Recent) && index < limit; index++ {
@@ -1223,13 +1481,13 @@ func requestColumns(width int) []column {
 	var columns []column
 	switch {
 	case width >= 120:
-		columns = []column{{"", 1}, {"时间", 11}, {"模型", 24}, {"客户端", 15}, {"tokens", 9}, {"状态", 5}, {"延迟", 8}, {"费用", 9}}
+		columns = []column{{"", 1}, {"Time", 11}, {"Model", 24}, {"Client", 15}, {"tokens", 9}, {"Status", 6}, {"Latency", 8}, {"Cost", 9}}
 	case width >= 80:
-		columns = []column{{"", 1}, {"时间", 11}, {"模型", 18}, {"客户端", 11}, {"tokens", 8}, {"状态", 4}, {"费用", 8}}
+		columns = []column{{"", 1}, {"Time", 11}, {"Model", 18}, {"Client", 11}, {"tokens", 8}, {"Status", 6}, {"Cost", 9}}
 	case width >= 40:
-		columns = []column{{"", 1}, {"时间", 8}, {"模型", 7}, {"tokens", 6}, {"状态", 4}, {"费用", 8}}
+		columns = []column{{"", 1}, {"Time", 8}, {"Model", 7}, {"tokens", 6}, {"Status", 6}, {"Cost", 9}}
 	default:
-		columns = []column{{"", 1}, {"时间", 7}, {"模型", 5}, {"tokens", 5}, {"状态", 3}}
+		columns = []column{{"", 1}, {"Time", 7}, {"Model", 5}, {"tokens", 5}, {"Status", 6}}
 	}
 	used := 1
 	for _, item := range columns {
@@ -1262,6 +1520,32 @@ func columnTitles(columns []column) []string {
 	return result
 }
 
+func displayClientName(name string) string {
+	switch strings.TrimSpace(name) {
+	case "", store.ClientUnknown:
+		return "Unknown"
+	case store.ClientBrowser:
+		return "Browser"
+	case "Codex Desktop":
+		return "codex"
+	default:
+		return name
+	}
+}
+
+func displaySeriesName(name string) string {
+	switch strings.TrimSpace(name) {
+	case store.ClientUnknown:
+		return "Unknown"
+	case store.ClientBrowser:
+		return "Browser"
+	case "Codex Desktop":
+		return "codex"
+	default:
+		return name
+	}
+}
+
 func requestCells(row ipc.RequestRow, selected bool, columns []column) []string {
 	marker := " "
 	if selected {
@@ -1270,18 +1554,18 @@ func requestCells(row ipc.RequestRow, selected bool, columns []column) []string 
 	at := time.Unix(row.TimestampUnix, 0).Format("01-02 15:04")
 	cost := formatMoney(row.Cost)
 	if len(columns) >= 8 {
-		return []string{marker, at, defaultValue(row.Model, "未知"), defaultValue(row.Client, store.ClientUnknown),
+		return []string{marker, at, defaultValue(row.Model, "Unknown"), displayClientName(row.Client),
 			formatCount(row.TotalTokens), fmt.Sprintf("%d", row.StatusCode), fmt.Sprintf("%.0fms", row.LatencyMS), cost}
 	}
 	if len(columns) >= 7 {
-		return []string{marker, at, defaultValue(row.Model, "未知"), defaultValue(row.Client, store.ClientUnknown),
+		return []string{marker, at, defaultValue(row.Model, "Unknown"), displayClientName(row.Client),
 			formatCount(row.TotalTokens), fmt.Sprintf("%d", row.StatusCode), cost}
 	}
 	if len(columns) == 6 {
-		return []string{marker, at, defaultValue(row.Model, "未知"),
+		return []string{marker, at, defaultValue(row.Model, "Unknown"),
 			formatCount(row.TotalTokens), fmt.Sprintf("%d", row.StatusCode), cost}
 	}
-	return []string{marker, at, defaultValue(row.Model, "未知"),
+	return []string{marker, at, defaultValue(row.Model, "Unknown"),
 		formatCount(row.TotalTokens), fmt.Sprintf("%d", row.StatusCode)}
 }
 
@@ -1309,12 +1593,8 @@ func padText(text string, width int) string {
 }
 
 func (m *Model) renderUsage(width, height int) []string {
-	r := newRenderer(width, height, m.ascii, m.color)
+	r := newRenderer(width, height, m.ascii, m.color, m.theme)
 	rangeText, bucketText := usageRangeText(m.series)
-	groupText := "模型"
-	if m.dimension == store.DimensionClient {
-		groupText = "客户端"
-	}
 	controlLines := 2
 	if m.editingDates {
 		controlLines += 4
@@ -1323,9 +1603,12 @@ func (m *Model) renderUsage(width, height int) []string {
 		}
 	}
 	controlHeight := minInt(controlLines+2, height)
-	r.panel("查询范围", controlHeight, toneBoxActivity, func(panel *renderer) {
-		panel.add(toneAccent, "%s", periodSelector(m.period))
-		panel.add(toneMuted, " 分组  %s (m/c)  ·  %s  ·  %s桶", groupText, rangeText, bucketText)
+	r.panel("Query range", controlHeight, toneBoxActivity, func(panel *renderer) {
+		panel.addSegments(toneNormal, periodSelectorSegments(m.period, m.theme.Accent)...)
+		dimension := dimensionSelectorSegments(m.dimension, m.theme.Accent)
+		dimension = append(dimension,
+			uiSegment{text: "  ·  " + rangeText + "  ·  " + bucketText + " buckets", tone: toneMuted})
+		panel.addSegments(toneNormal, dimension...)
 		if m.editingDates {
 			m.appendDateEditor(panel)
 		}
@@ -1334,8 +1617,8 @@ func (m *Model) renderUsage(width, height int) []string {
 	seriesTotals, pointsByBucket, bucketCount := usageChartData(m.series)
 	if len(m.series.Points) == 0 {
 		if r.remaining() > 0 {
-			r.panel("用量趋势 · "+m.periodLabel(), r.remaining(), toneBoxAccount, func(panel *renderer) {
-				panel.add(toneMuted, " 暂无用量")
+			r.panel("Usage trend · "+m.periodLabel(), r.remaining(), toneBoxAccount, func(panel *renderer) {
+				panel.add(toneMuted, " No usage yet")
 			})
 		}
 		return r.finish()
@@ -1356,7 +1639,7 @@ func (m *Model) renderUsage(width, height int) []string {
 		tableHeight = 0
 	}
 	if chartHeight > 0 {
-		r.panel(usageChartTitle(m.periodLabel(), groupText, width), chartHeight, toneBoxAccount,
+		r.panel(usageChartTitle(m.periodLabel(), width), chartHeight, toneBoxAccount,
 			func(panel *renderer) {
 				panel.add(toneAccent, "%s", usageSummary(m.series.Points))
 				if panel.remaining() <= 0 {
@@ -1373,7 +1656,7 @@ func (m *Model) renderUsage(width, height int) []string {
 			})
 	}
 	if tableHeight > 0 {
-		r.panel("系列明细 · 按"+groupText, tableHeight, toneBoxRequests, func(panel *renderer) {
+		r.panel("Series details", tableHeight, toneBoxRequests, func(panel *renderer) {
 			m.appendUsageTable(panel, seriesTotals, panel.remaining())
 		})
 	}
@@ -1390,6 +1673,40 @@ type usageTotal struct {
 }
 
 func (u usageTotal) tokens() int { return u.HitTokens + u.MissTokens + u.OutTokens }
+
+func (p palette) usageSeriesColors() []string {
+	candidates := []string{
+		p.Accent, p.BoxAccount, p.BoxActivity, p.Up, p.Warn, p.Error, p.DivLine,
+	}
+	seen := make(map[string]bool, len(candidates))
+	result := make([]string, 0, len(candidates))
+	for _, color := range candidates {
+		color = strings.ToLower(strings.TrimSpace(color))
+		if color == "" || seen[color] {
+			continue
+		}
+		seen[color] = true
+		result = append(result, color)
+	}
+	if len(result) == 0 {
+		return []string{navigationTextColor}
+	}
+	return result
+}
+
+func usageSeriesColorMap(totals []usageTotal, theme palette) map[string]string {
+	names := make([]string, 0, len(totals))
+	for _, item := range totals {
+		names = append(names, item.Name)
+	}
+	sort.Strings(names)
+	colors := theme.usageSeriesColors()
+	result := make(map[string]string, len(names))
+	for index, name := range names {
+		result[name] = colors[index%len(colors)]
+	}
+	return result
+}
 
 func usageChartData(series ipc.Series) ([]usageTotal, [][]usageTotal, int) {
 	if len(series.Points) == 0 {
@@ -1484,14 +1801,14 @@ func usageBucketRange(bucketCount, columns, column int) (int, int) {
 	return start, end
 }
 
-func usageChartTitle(periodLabel, groupText string, width int) string {
+func usageChartTitle(periodLabel string, width int) string {
 	switch {
 	case width >= 72:
-		return fmt.Sprintf("用量趋势 · tokens · %s · 按%s", periodLabel, groupText)
+		return fmt.Sprintf("Usage trend · tokens · %s", periodLabel)
 	case width >= 52:
-		return fmt.Sprintf("用量趋势 · tokens · %s", periodLabel)
+		return fmt.Sprintf("Usage trend · tokens · %s", periodLabel)
 	default:
-		return fmt.Sprintf("用量趋势 · %s", periodLabel)
+		return fmt.Sprintf("Usage trend · %s", periodLabel)
 	}
 }
 
@@ -1607,6 +1924,7 @@ func (m *Model) appendUsageChart(r *renderer, totals []usageTotal, buckets [][]u
 	for index, item := range totals {
 		seriesOrder[item.Name] = index
 	}
+	seriesColors := usageSeriesColorMap(totals, m.theme)
 	vertical, tick, corner, horizontal, arrow, joint := "│", "┤", "└", "─", "→", "┬"
 	if m.ascii {
 		vertical, tick, corner, horizontal, arrow, joint = "|", "+", "+", "-", ">", "+"
@@ -1637,34 +1955,52 @@ func (m *Model) appendUsageChart(r *renderer, totals []usageTotal, buckets [][]u
 		if isTick {
 			axis = tick
 		}
-		level := 1.0
-		if plotRows > 1 {
-			level = 1 - float64(row)/float64(plotRows-1)
+		barSegments := make([]uiSegment, 0, len(columns)/4+1)
+		var run strings.Builder
+		runColor := ""
+		flushRun := func() {
+			if run.Len() == 0 {
+				return
+			}
+			barSegments = append(barSegments, uiSegment{
+				text: run.String(), tone: toneNormal, color: runColor,
+			})
+			run.Reset()
 		}
-		barColor := usageBarColor(level)
-		var builder strings.Builder
 		for column := 0; column < len(columns); column++ {
 			segments := columns[column]
 			total := columnTotals[column]
+			glyph := " "
+			color := ""
 			if total <= 0 || levelBottom >= float64(total)/float64(maxBucket) {
-				builder.WriteRune(' ')
-				continue
-			}
-			cumulative := 0.0
-			chosen := 0
-			for _, item := range segments {
-				segmentTop := cumulative + float64(item.tokens())/float64(maxBucket)
-				if levelTop > cumulative && levelBottom < segmentTop {
-					chosen = seriesOrder[item.Name]
-					break
+			} else {
+				cumulative := 0.0
+				chosen := 0
+				chosenName := ""
+				for _, item := range segments {
+					segmentTop := cumulative + float64(item.tokens())/float64(maxBucket)
+					if levelTop > cumulative && levelBottom < segmentTop {
+						chosen = seriesOrder[item.Name]
+						chosenName = item.Name
+						break
+					}
+					cumulative = segmentTop
 				}
-				cumulative = segmentTop
+				glyph = usageBarGlyph(chosen, m.ascii)
+				color = seriesColors[chosenName]
 			}
-			builder.WriteString(usageBarGlyph(chosen, m.ascii))
+			if color != runColor {
+				flushRun()
+				runColor = color
+			}
+			run.WriteString(glyph)
 		}
-		r.addSegments(toneNormal,
-			uiSegment{text: fmt.Sprintf("%*s %s", labelWidth, tickLabel, axis), tone: toneMuted},
-			uiSegment{text: builder.String(), tone: toneNormal, color: barColor})
+		flushRun()
+		lineSegments := []uiSegment{{
+			text: fmt.Sprintf("%*s %s", labelWidth, tickLabel, axis), tone: toneMuted,
+		}}
+		lineSegments = append(lineSegments, barSegments...)
+		r.addSegments(toneNormal, lineSegments...)
 	}
 	axisLine := []rune(strings.Repeat(horizontal, len(columns)))
 	if len(axisLine) > 0 {
@@ -1698,12 +2034,17 @@ func (m *Model) appendUsageLegend(r *renderer, totals []usageTotal) {
 	if limit > len(totals) {
 		limit = len(totals)
 	}
-	legend := make([]string, 0, limit)
+	colors := usageSeriesColorMap(totals, m.theme)
+	legend := []uiSegment{{text: " ", tone: toneNormal}}
 	for index := 0; index < limit; index++ {
 		marker := usageBarGlyph(index, m.ascii)
-		legend = append(legend, marker+" "+totals[index].Name)
+		name := displaySeriesName(totals[index].Name)
+		color := colors[totals[index].Name]
+		legend = append(legend,
+			uiSegment{text: marker + " " + name, tone: toneNormal, color: color},
+			uiSegment{text: "  ", tone: toneMuted})
 	}
-	r.add(toneMuted, " %s", strings.Join(legend, "  "))
+	r.addSegments(toneNormal, legend...)
 }
 
 func (m *Model) appendUsageTable(r *renderer, totals []usageTotal, rows int) {
@@ -1722,11 +2063,11 @@ func usageTableColumns(width int) []column {
 	var columns []column
 	switch {
 	case width >= 120:
-		columns = []column{{"系列", 32}, {"请求", 8}, {"tokens", 12}, {"命中", 8}, {"费用", 10}}
+		columns = []column{{"Series", 32}, {"Requests", 9}, {"tokens", 12}, {"Hit", 8}, {"Cost", 10}}
 	case width >= 80:
-		columns = []column{{"系列", 22}, {"请求", 7}, {"tokens", 10}, {"命中", 7}, {"费用", 9}}
+		columns = []column{{"Series", 22}, {"Requests", 9}, {"tokens", 10}, {"Hit", 7}, {"Cost", 9}}
 	default:
-		columns = []column{{"系列", 12}, {"tokens", 9}, {"费用", 8}}
+		columns = []column{{"Series", 12}, {"tokens", 9}, {"Cost", 8}}
 	}
 	used := len(columns) - 1
 	for _, item := range columns {
@@ -1753,14 +2094,14 @@ func usageTableCells(item usageTotal, count int) []string {
 		hitRate = float64(item.HitTokens) / float64(promptTokens) * 100
 	}
 	if count >= 5 {
-		return []string{item.Name, formatCount(item.Requests), formatCount(item.tokens()),
+		return []string{displaySeriesName(item.Name), formatCount(item.Requests), formatCount(item.tokens()),
 			fmt.Sprintf("%.1f%%", hitRate), formatMoney(item.Cost)}
 	}
-	return []string{item.Name, formatCount(item.tokens()), formatMoney(item.Cost)}
+	return []string{displaySeriesName(item.Name), formatCount(item.tokens()), formatMoney(item.Cost)}
 }
 
 func (m *Model) appendDateEditor(r *renderer) {
-	r.add(toneTitle, " ─ 自定义日期 ─────────────────────────")
+	r.add(toneTitle, " ─ Custom date ──────────────────────────")
 	mark := func(index int) string {
 		if index == m.dateFocus {
 			return "[" + m.dateFields[index] + "]"
@@ -1768,16 +2109,16 @@ func (m *Model) appendDateEditor(r *renderer) {
 		return " " + m.dateFields[index] + " "
 	}
 	if r.width >= 60 {
-		r.add(toneNormal, " 开始 %s    结束 %s", mark(0), mark(1))
+		r.add(toneNormal, " Start %s    End %s", mark(0), mark(1))
 	} else {
-		r.add(toneNormal, " 开始 %s", mark(0))
-		r.add(toneNormal, " 结束 %s", mark(1))
+		r.add(toneNormal, " Start %s", mark(0))
+		r.add(toneNormal, " End %s", mark(1))
 	}
-	r.add(toneMuted, " YYYY-MM-DD  Tab 切换  Enter 确认  Esc 取消")
+	r.add(toneMuted, " YYYY-MM-DD  Tab switch  Enter confirm  Esc cancel")
 }
 
 func (m *Model) renderRequests(width, height int) []string {
-	r := newRenderer(width, height, m.ascii, m.color)
+	r := newRenderer(width, height, m.ascii, m.color, m.theme)
 	total := m.requests.Total
 	first := 0
 	last := 0
@@ -1793,12 +2134,12 @@ func (m *Model) renderRequests(width, height int) []string {
 	listHeight := m.requestListPanelHeight(height)
 	detailHeight := height - listHeight
 	if listHeight > 0 {
-		title := fmt.Sprintf("请求 %d–%d / %d · 第 %d/%d 页", first, last, total, page, pages)
+		title := fmt.Sprintf("Requests %d–%d / %d · page %d/%d", first, last, total, page, pages)
 		r.panel(title, listHeight, toneBoxRequests, func(panel *renderer) {
 			columns := requestColumns(panel.width)
 			panel.add(toneTitle, " %s", formatColumns(columnTitles(columns), columns))
 			if len(m.requests.Rows) == 0 {
-				panel.add(toneMuted, " 暂无请求记录")
+				panel.add(toneMuted, " No requests yet")
 				return
 			}
 			start := minInt(m.requestTop, len(m.requests.Rows))
@@ -1814,35 +2155,35 @@ func (m *Model) renderRequests(width, height int) []string {
 		})
 	}
 	if selected, ok := m.selectedRequest(); ok && detailHeight >= 2 {
-		r.panel("请求详情", detailHeight, toneBoxActivity, func(panel *renderer) {
-			panel.add(toneMuted, " 选中 %s  %s / %s", time.Unix(selected.TimestampUnix, 0).Format("2006-01-02 15:04:05"),
-				defaultValue(selected.Model, "未知"), defaultValue(selected.Client, store.ClientUnknown))
+		r.panel("Request details", detailHeight, toneBoxActivity, func(panel *renderer) {
+			panel.add(toneMuted, " Selected %s  %s / %s", time.Unix(selected.TimestampUnix, 0).Format("2006-01-02 15:04:05"),
+				defaultValue(selected.Model, "Unknown"), displayClientName(selected.Client))
 			panel.add(toneMuted, " prompt %s · completion %s · total %s · %.0fms · HTTP %d · %s",
 				formatCount(selected.PromptTokens), formatCount(selected.CompletionTokens),
 				formatCount(selected.TotalTokens), selected.LatencyMS, selected.StatusCode, formatMoney(selected.Cost))
-			panel.add(toneMuted, " %s", defaultValue(selected.Endpoint, "endpoint 未知"))
+			panel.add(toneMuted, " %s", defaultValue(selected.Endpoint, "unknown endpoint"))
 		})
 	}
 	return r.finish()
 }
 
 func (m *Model) renderPricing(width, height int) []string {
-	r := newRenderer(width, height, m.ascii, m.color)
+	r := newRenderer(width, height, m.ascii, m.color, m.theme)
 	summaryHeight := minInt(5, height)
-	r.panel("计费修订", summaryHeight, toneBoxTraffic, func(panel *renderer) {
-		panel.add(toneNormal, " 修订数    %d", m.pricing.Count)
+	r.panel("Pricing revisions", summaryHeight, toneBoxTraffic, func(panel *renderer) {
+		panel.add(toneNormal, " Revisions      %d", m.pricing.Count)
 		if m.pricing.LatestValidUnix > 0 {
-			panel.add(toneNormal, " 最近生效  %s",
+			panel.add(toneNormal, " Latest         %s",
 				time.Unix(m.pricing.LatestValidUnix, 0).Format("2006-01-02 15:04"))
 		} else {
-			panel.add(toneMuted, " 最近生效  --")
+			panel.add(toneMuted, " Latest         --")
 		}
-		panel.add(toneNormal, " 来源      %s", pricingSourceText(m.pricing.LatestSource))
+		panel.add(toneNormal, " Source         %s", pricingSourceText(m.pricing.LatestSource))
 	})
 	if r.remaining() > 0 {
-		r.panel("说明", r.remaining(), toneBoxRequests, func(panel *renderer) {
-			panel.add(toneMuted, " 计费修订只读；模型输出不会直接写库。")
-			panel.add(toneMuted, " 自动检查、差异预览和人工确认在 Phase 6 接入。")
+		r.panel("Notes", r.remaining(), toneBoxRequests, func(panel *renderer) {
+			panel.add(toneMuted, " Pricing revisions are read-only; model output is never written directly.")
+			panel.add(toneMuted, " Automatic checks, diff previews, and manual approval arrive in Phase 6.")
 		})
 	}
 	return r.finish()
@@ -1851,60 +2192,83 @@ func (m *Model) renderPricing(width, height int) []string {
 func pricingSourceText(source string) string {
 	switch source {
 	case "bundled":
-		return "内置规则"
+		return "Bundled"
 	case "userOverride":
-		return "用户覆盖"
+		return "User override"
 	case "remote":
-		return "远端更新"
+		return "Remote update"
 	case "none", "":
-		return "无"
+		return "None"
 	default:
 		return source
 	}
 }
 
 func (m *Model) renderHelp(width, height int) []string {
-	r := newRenderer(width, height, m.ascii, m.color)
-	r.panel("帮助 · 快捷键", height, toneBoxRequests, func(panel *renderer) {
-		panel.add(toneAccent, " 页面")
-		panel.add(toneNormal, "   Tab / ← →      切换概览、用量、请求、计费")
-		panel.add(toneNormal, "   1–6             用量页时间范围")
-		panel.add(toneNormal, "   m / c           按模型 / 客户端分组")
-		panel.add(toneAccent, " 列表")
-		panel.add(toneNormal, "   j / k  ↓ / ↑    选择请求")
-		panel.add(toneNormal, "   [ / ]           上一页 / 下一页")
-		panel.add(toneAccent, " 其他")
-		panel.add(toneNormal, "   r               立即刷新")
-		panel.add(toneNormal, "   s               打开设置（退出当前界面后返回）")
-		panel.add(toneNormal, "   ? / Esc         打开 / 关闭帮助")
-		panel.add(toneNormal, "   q / Ctrl+C      退出 TUI（不停止 daemon）")
-		panel.add(toneMuted, " 窄屏自动隐藏次要列；NO_COLOR=1 使用 ASCII 回退。")
+	r := newRenderer(width, height, m.ascii, m.color, m.theme)
+	r.panel("Help · Shortcuts", height, toneBoxRequests, func(panel *renderer) {
+		panel.add(toneAccent, " Pages")
+		panel.add(toneNormal, "   o / u / e / p  Overview, Usage, Requests, Pricing")
+		panel.add(toneNormal, "   Tab / ← →      Next / previous page")
+		panel.add(toneNormal, "   1–6            Usage time range")
+		panel.add(toneNormal, "   m / c          Group by model / client")
+		panel.add(toneAccent, " Lists")
+		panel.add(toneNormal, "   j / k  ↓ / ↑   Select request")
+		panel.add(toneNormal, "   [ / ]          Previous / next page")
+		panel.add(toneAccent, " Other")
+		panel.add(toneNormal, "   r              Refresh now")
+		panel.add(toneNormal, "   s              Open settings (returns to the dashboard)")
+		panel.add(toneNormal, "   h / ? / Esc    Open / close help")
+		panel.add(toneNormal, "   q / Ctrl+C     Quit TUI (keeps the daemon running)")
+		panel.add(toneMuted, " Narrow terminals hide secondary columns; NO_COLOR=1 uses ASCII fallback.")
 		if width < 80 {
-			panel.add(toneMuted, " 终端太窄时请放大窗口查看完整标签。")
+			panel.add(toneMuted, " Enlarge the terminal to see every label.")
 		}
 	})
 	return r.finish()
 }
 
 func periodSelector(period store.UsagePeriod) string {
-	parts := make([]string, 0, len(usagePeriodOptions))
+	return segmentsText(periodSelectorSegments(period, fallbackPalette().Accent))
+}
+
+func periodSelectorSegments(period store.UsagePeriod, accent string) []uiSegment {
+	segments := make([]uiSegment, 0, len(usagePeriodOptions)*5)
+	superscript := []string{"¹", "²", "³", "⁴", "⁵", "⁶"}
 	for index, item := range usagePeriodOptions {
-		text := fmt.Sprintf("%d%s", index+1, item.label)
-		if item.period == period {
-			text = "[" + text + "]"
+		if index > 0 {
+			segments = append(segments, uiSegment{text: "  ", tone: toneNormal})
 		}
-		parts = append(parts, text)
+		active := item.period == period
+		if active {
+			segments = append(segments, uiSegment{text: "[", color: navigationTextColor})
+		}
+		segments = append(segments, uiSegment{text: superscript[index], tone: toneAccent, color: accent})
+		segments = append(segments, uiSegment{text: item.label, color: navigationTextColor})
+		if active {
+			segments = append(segments, uiSegment{text: "]", color: navigationTextColor})
+		}
 	}
-	return " " + strings.Join(parts, " ")
+	return segments
+}
+
+func dimensionSelectorSegments(dimension store.UsageDimension, accent string) []uiSegment {
+	segments := []uiSegment{{text: "by ", color: navigationTextColor}}
+	segments = append(segments,
+		shortcutWord("model", 'm', dimension == store.DimensionModel, accent)...)
+	segments = append(segments, uiSegment{text: " ", tone: toneNormal})
+	segments = append(segments,
+		shortcutWord("client", 'c', dimension == store.DimensionClient, accent)...)
+	return segments
 }
 
 func usageRangeText(series ipc.Series) (string, string) {
-	bucket := "小时"
+	bucket := "hour"
 	if series.Bucket == string(store.BucketDay) {
-		bucket = "天"
+		bucket = "day"
 	}
 	if series.FromUnix <= 0 || series.ToUnix <= series.FromUnix {
-		return "区间 --", bucket
+		return "range --", bucket
 	}
 	from := time.Unix(series.FromUnix, 0).In(time.Local)
 	to := time.Unix(series.ToUnix, 0).In(time.Local)
@@ -1928,10 +2292,10 @@ func usageSummary(points []ipc.SeriesPoint) string {
 	if hit+miss > 0 {
 		hitRate = float64(hit) / float64(hit+miss) * 100
 	}
-	text := fmt.Sprintf(" 请求 %s · %s tokens · 命中 %.1f%% · 花费 %s",
+	text := fmt.Sprintf(" Requests %s · %s tokens · %.1f%% hit · %s spent",
 		formatCount(requests), formatCount(hit+miss+out), hitRate, formatMoney(cost))
 	if unpriced > 0 {
-		text += fmt.Sprintf(" · 未计价 %d", unpriced)
+		text += fmt.Sprintf(" · %d unpriced", unpriced)
 	}
 	return text
 }

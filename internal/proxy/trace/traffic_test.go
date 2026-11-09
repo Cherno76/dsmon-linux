@@ -65,10 +65,10 @@ func TestTrafficRateUsesBusiestOfLastTwoBuckets(t *testing.T) {
 func TestTrafficDefaultsMatchBtopDensity(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 	traffic := NewTraffic(at)
-	if traffic.BucketCount() != 3600 || traffic.BucketSeconds() != 500*time.Millisecond {
+	if traffic.BucketCount() != 3600 || traffic.BucketSeconds() != 2*time.Second {
 		t.Fatalf("default traffic ring = %d x %s", traffic.BucketCount(), traffic.BucketSeconds())
 	}
-	if window := time.Duration(traffic.BucketCount()) * traffic.BucketSeconds(); window != 30*time.Minute {
+	if window := time.Duration(traffic.BucketCount()) * traffic.BucketSeconds(); window != 2*time.Hour {
 		t.Fatalf("default traffic window = %s", window)
 	}
 }

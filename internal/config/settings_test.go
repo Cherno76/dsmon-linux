@@ -178,11 +178,11 @@ func TestLoadProxySettingsRejectsMalformedFile(t *testing.T) {
 		{name: "wrong type", data: "[proxy]\nrpm_limit = \"60\"\n", want: "expects an integer"},
 		{name: "duplicate key", data: "[proxy]\nrpm_limit = 1\nrpm_limit = 2\n", want: "duplicate key"},
 		{name: "unterminated string", data: "[proxy]\nlisten = \"127.0.0.1:18080\n", want: "invalid quoted string"},
-		{name: "bad port", data: "[proxy]\nlisten = \"127.0.0.1:70000\"\n", want: "监听端口"},
+		{name: "bad port", data: "[proxy]\nlisten = \"127.0.0.1:70000\"\n", want: "listen port"},
 		{name: "non-loopback", data: "[proxy]\nlisten = \"0.0.0.0:18080\"\n", want: "127.0.0.1"},
 		{name: "bad URL", data: "[proxy]\nopenai_base = \"not-a-url\"\n", want: "OpenAI base URL"},
-		{name: "bad retention", data: "[storage]\nretention_days = 3651\n", want: "保留天数"},
-		{name: "bad threshold", data: "[balance]\nlow_threshold = -1\n", want: "余额阈值"},
+		{name: "bad retention", data: "[storage]\nretention_days = 3651\n", want: "retention days"},
+		{name: "bad threshold", data: "[balance]\nlow_threshold = -1\n", want: "balance threshold"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

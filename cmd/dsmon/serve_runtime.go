@@ -207,6 +207,14 @@ func (r *serveRuntime) TrafficFrame(now time.Time, width int) trace.Frame {
 	return generation.server.TrafficFrame(now, width)
 }
 
+func (r *serveRuntime) LastActivityAt() time.Time {
+	generation := r.current()
+	if generation == nil {
+		return time.Time{}
+	}
+	return generation.server.LastActivityAt()
+}
+
 // Reload 先完成读取、校验和资源准备，再切换当前代；失败时旧代继续服务。
 func (r *serveRuntime) Reload(ctx context.Context) error {
 	r.reloadMu.Lock()
@@ -216,7 +224,7 @@ func (r *serveRuntime) Reload(ctx context.Context) error {
 	}
 	settings, err := config.LoadProxySettings()
 	if err != nil {
-		return fmt.Errorf("重新读取配置失败: %w", err)
+		return fmt.Errorf("failed to reload settings: %w", err)
 	}
 	old := r.current()
 	if old == nil {
@@ -235,11 +243,11 @@ func (r *serveRuntime) reloadCurrentGeneration(ctx context.Context, old *serveGe
 		return err
 	}
 	if err := r.store.SetRetentionDays(ctx, settings.RetentionDays); err != nil {
-		return fmt.Errorf("应用保留天数失败: %w", err)
+		return fmt.Errorf("failed to apply retention days: %w", err)
 	}
 	newProxyConfig := proxyConfig(settings, r.store, r.logger)
 	if err := old.server.Reconfigure(newProxyConfig); err != nil {
-		return fmt.Errorf("应用代理配置失败: %w", err)
+		return fmt.Errorf("failed to apply proxy settings: %w", err)
 	}
 	pollerCtx, pollerCancel := context.WithCancel(r.parent)
 	next := &serveGeneration{
@@ -265,11 +273,11 @@ func (r *serveRuntime) replaceGeneration(ctx context.Context, old *serveGenerati
 	settings config.ProxySettings) error {
 	next, err := r.startGeneration(settings)
 	if err != nil {
-		return fmt.Errorf("启动新监听失败: %w", err)
+		return fmt.Errorf("failed to start new listener: %w", err)
 	}
 	if err := r.store.SetRetentionDays(ctx, settings.RetentionDays); err != nil {
 		next.stop()
-		return fmt.Errorf("应用保留天数失败: %w", err)
+		return fmt.Errorf("failed to apply retention days: %w", err)
 	}
 	r.setCurrent(next)
 	old.retiring.Store(true)

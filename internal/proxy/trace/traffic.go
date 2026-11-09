@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	DefaultTrafficBucketSeconds = 500 * time.Millisecond
+	DefaultTrafficBucketSeconds = 2 * time.Second
 	DefaultTrafficBucketCount   = 3600
 	TrafficRateWindow           = 2 * time.Second
 	DefaultTrafficGridSeconds   = 30 * time.Second

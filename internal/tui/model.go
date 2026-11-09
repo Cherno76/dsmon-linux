@@ -27,12 +27,15 @@ const (
 
 const requestPageSize = 100
 
-var pageTitles = []string{"概览", "用量", "请求", "计费"}
+var pageTitles = []string{"overview", "usage", "requests", "pricing"}
+
+var pageShortcutKeys = []byte{'o', 'u', 'e', 'p'}
 
 type Model struct {
 	client *ipc.Client
 	ascii  bool
 	color  bool
+	theme  palette
 
 	width  int
 	height int
@@ -73,12 +76,12 @@ type usagePeriodOption struct {
 }
 
 var usagePeriodOptions = []usagePeriodOption{
-	{store.PeriodToday, "今日"},
-	{store.PeriodYesterday, "昨日"},
-	{store.PeriodLast7, "近7天"},
-	{store.PeriodLast30, "近30天"},
-	{store.PeriodThisMonth, "本月"},
-	{store.PeriodLastMonth, "上月"},
+	{store.PeriodToday, "Today"},
+	{store.PeriodYesterday, "Yest."},
+	{store.PeriodLast7, "7d"},
+	{store.PeriodLast30, "30d"},
+	{store.PeriodThisMonth, "Month"},
+	{store.PeriodLastMonth, "Prev. m"},
 }
 
 func NewModel(client *ipc.Client, ascii bool) *Model {
@@ -88,6 +91,7 @@ func NewModel(client *ipc.Client, ascii bool) *Model {
 		client:        client,
 		ascii:         ascii,
 		color:         !ascii,
+		theme:         loadPalette(),
 		width:         100,
 		height:        30,
 		period:        store.PeriodToday,
@@ -128,7 +132,7 @@ func (m *Model) Init() tea.Cmd {
 }
 
 func tickCmd() tea.Cmd {
-	return tea.Tick(time.Second, func(at time.Time) tea.Msg { return tickMsg(at) })
+	return tea.Tick(2*time.Second, func(at time.Time) tea.Msg { return tickMsg(at) })
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -144,6 +148,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tickMsg:
 		m.ticks++
+		if theme, ok := loadPaletteIfAvailable(); ok {
+			m.theme = theme
+		}
 		commands := m.refreshCommands()
 		commands = append(commands, tickCmd())
 		return m, tea.Batch(commands...)
@@ -198,7 +205,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case settingsDoneMsg:
 		if msg.err != nil {
-			m.pageErr = "设置: " + msg.err.Error()
+			m.pageErr = "Settings: " + msg.err.Error()
 		} else {
 			m.pageErr = ""
 		}
@@ -212,7 +219,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateKey(key string) (tea.Model, tea.Cmd) {
 	if m.help {
 		switch key {
-		case "esc", "?", "q":
+		case "esc", "?", "h", "q":
 			m.help = false
 		case "ctrl+c":
 			return m, tea.Quit
@@ -226,8 +233,20 @@ func (m *Model) updateKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "q", "ctrl+c":
 		return m, tea.Quit
-	case "?":
+	case "?", "h":
 		m.help = true
+	case "o":
+		m.page = PageOverview
+		m.pageChanged()
+	case "u":
+		m.page = PageUsage
+		m.pageChanged()
+	case "e":
+		m.page = PageRequests
+		m.pageChanged()
+	case "p":
+		m.page = PagePricing
+		m.pageChanged()
 	case "tab", "right":
 		m.page = (m.page + 1) % pageCount
 		m.pageChanged()
@@ -250,7 +269,7 @@ func (m *Model) updateKey(key string) (tea.Model, tea.Cmd) {
 	case "s":
 		executable, err := os.Executable()
 		if err != nil {
-			m.pageErr = "打开设置失败: " + err.Error()
+			m.pageErr = "Failed to open settings: " + err.Error()
 			return m, nil
 		}
 		return m, tea.ExecProcess(exec.Command(executable, "settings"), func(err error) tea.Msg {
@@ -395,7 +414,7 @@ func (m *Model) updateDateEntry(key string) (tea.Model, tea.Cmd) {
 		from, errFrom := time.ParseInLocation("2006-01-02", strings.TrimSpace(m.dateFields[0]), time.Local)
 		to, errTo := time.ParseInLocation("2006-01-02", strings.TrimSpace(m.dateFields[1]), time.Local)
 		if errFrom != nil || errTo != nil || to.Before(from) {
-			m.pageErr = "日期格式应为 YYYY-MM-DD，且结束日期不能早于开始日期"
+			m.pageErr = "Dates must use YYYY-MM-DD, and the end date cannot be before the start date"
 			return m, nil
 		}
 		m.customFrom = startOfLocalDay(from)
@@ -427,9 +446,9 @@ func (m *Model) View() string { return renderModel(m) }
 
 func (m *Model) periodLabel() string {
 	labels := map[store.UsagePeriod]string{
-		store.PeriodToday: "今日", store.PeriodYesterday: "昨日", store.PeriodLast7: "近 7 天",
-		store.PeriodLast30: "近 30 天", store.PeriodThisMonth: "本月", store.PeriodLastMonth: "上月",
-		store.PeriodCustom: "自定义",
+		store.PeriodToday: "Today", store.PeriodYesterday: "Yesterday", store.PeriodLast7: "Last 7 days",
+		store.PeriodLast30: "Last 30 days", store.PeriodThisMonth: "This month",
+		store.PeriodLastMonth: "Last month", store.PeriodCustom: "Custom",
 	}
 	if label := labels[m.period]; label != "" {
 		return label
@@ -449,10 +468,10 @@ func (m *Model) statusText() string {
 		return m.pageErr
 	}
 	if m.connectionErr != "" {
-		return "daemon 未连接: " + m.connectionErr
+		return "Daemon offline: " + m.connectionErr
 	}
 	if m.stats.Balance.Error != "" {
-		return "余额: " + m.stats.Balance.Error
+		return "Balance: " + m.stats.Balance.Error
 	}
 	return ""
 }

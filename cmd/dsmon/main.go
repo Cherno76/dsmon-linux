@@ -11,9 +11,8 @@ import (
 	"dsmon/internal/ipc"
 	"dsmon/internal/store"
 	"dsmon/internal/tui"
+	"dsmon/internal/version"
 )
-
-const version = "0.1.0-dev"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -33,11 +32,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "settings":
 		return runSettings(args[1:], stdout, stderr)
 	case "status":
-		return notImplemented("status", stderr)
+		return runStatus(args[1:], stdout, stderr)
 	case "import":
 		return runImport(args[1:], stdout, stderr)
 	case "version", "--version", "-v":
-		fmt.Fprintln(stdout, "dsmon", version)
+		fmt.Fprintln(stdout, "dsmon", version.Current)
 		return 0
 	case "help", "--help", "-h":
 		usage(stdout)

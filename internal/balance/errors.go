@@ -33,35 +33,35 @@ func (e *QueryError) Message() string {
 	}
 	switch e.Reason {
 	case ReasonNoAPIKey:
-		return "未设置 API key"
+		return "API key is not set"
 	case ReasonInvalidResponse:
-		return "余额接口响应无效"
+		return "invalid balance response"
 	case ReasonParseFailed:
-		return "余额数据解析失败"
+		return "failed to parse balance data"
 	case ReasonAuth:
 		if e.StatusCode == 403 {
-			return "API key 没有余额查询权限"
+			return "API key is not allowed to query balance"
 		}
-		return "API key 无效或已过期"
+		return "API key is invalid or expired"
 	case ReasonRateLimited:
-		return "余额查询被限流"
+		return "balance query was rate limited"
 	case ReasonServiceDown:
-		return "余额服务暂时不可用"
+		return "balance service is temporarily unavailable"
 	case ReasonHTTP:
-		return fmt.Sprintf("余额查询失败（HTTP %d）", e.StatusCode)
+		return fmt.Sprintf("balance query failed (HTTP %d)", e.StatusCode)
 	case ReasonTimedOut:
-		return "余额查询超时"
+		return "balance query timed out"
 	case ReasonOffline:
-		return "网络不可用"
+		return "network unavailable"
 	case ReasonNetwork:
 		if e.Detail != "" {
-			return "网络错误：" + e.Detail
+			return "network error: " + e.Detail
 		}
-		return "网络错误"
+		return "network error"
 	case ReasonStorage:
-		return "余额已取到，但写入采样失败"
+		return "balance fetched, but writing the sample failed"
 	default:
-		return "余额查询失败"
+		return "balance query failed"
 	}
 }
 

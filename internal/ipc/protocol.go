@@ -50,8 +50,9 @@ type Balance struct {
 }
 
 type BalancePoint struct {
-	Unix  int64   `json:"unix"`
-	Value float64 `json:"value"`
+	Unix    int64   `json:"unix"`
+	Value   float64 `json:"value"`
+	Missing bool    `json:"missing,omitempty"`
 }
 
 type Stats struct {
@@ -65,23 +66,24 @@ type Stats struct {
 }
 
 type Trace struct {
-	Activity           []int           `json:"activity"`
-	ActivityBucketSecs int             `json:"activity_bucket_seconds"`
-	ActivityFullScale  int             `json:"activity_full_scale"`
-	Traffic            []TrafficBucket `json:"traffic"`
-	TrafficBucketSecs  float64         `json:"traffic_bucket_seconds"`
-	Shift              float64         `json:"shift"`
-	Grid               []float64       `json:"grid"`
-	DownRate           float64         `json:"down_rate"`
-	UpRate             float64         `json:"up_rate"`
-	DownScale          float64         `json:"down_scale"`
-	UpScale            float64         `json:"up_scale"`
-	DownTop            float64         `json:"down_top"`
-	UpTop              float64         `json:"up_top"`
-	DownTotal          int64           `json:"down_total"`
-	UpTotal            int64           `json:"up_total"`
-	NowUnixNano        int64           `json:"now_unix_nano"`
-	Health             bool            `json:"health"`
+	Activity             []int           `json:"activity"`
+	ActivityBucketSecs   int             `json:"activity_bucket_seconds"`
+	ActivityFullScale    int             `json:"activity_full_scale"`
+	Traffic              []TrafficBucket `json:"traffic"`
+	TrafficBucketSecs    float64         `json:"traffic_bucket_seconds"`
+	Shift                float64         `json:"shift"`
+	Grid                 []float64       `json:"grid"`
+	DownRate             float64         `json:"down_rate"`
+	UpRate               float64         `json:"up_rate"`
+	DownScale            float64         `json:"down_scale"`
+	UpScale              float64         `json:"up_scale"`
+	DownTop              float64         `json:"down_top"`
+	UpTop                float64         `json:"up_top"`
+	DownTotal            int64           `json:"down_total"`
+	UpTotal              int64           `json:"up_total"`
+	NowUnixNano          int64           `json:"now_unix_nano"`
+	LastActivityUnixNano int64           `json:"last_activity_unix_nano,omitempty"`
+	Health               bool            `json:"health"`
 }
 
 type TrafficBucket struct {

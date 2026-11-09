@@ -21,6 +21,11 @@ const requestTimeout = 5 * time.Second
 
 const balanceTrendCacheTTL = 30 * time.Second
 
+const (
+	balance24hBucketCount = 288 // 24h / 5min
+	balance7dBucketCount  = 336 // 7d / 30min
+)
+
 type BalanceSource interface {
 	Latest() balance.State
 }
@@ -28,6 +33,7 @@ type BalanceSource interface {
 type TraceSource interface {
 	ActivityBars(time.Time) []int
 	TrafficFrame(time.Time, int) trace.Frame
+	LastActivityAt() time.Time
 }
 
 type LiveSettings struct {
@@ -256,7 +262,7 @@ func (s *Server) stats(ctx context.Context) (Stats, error) {
 	}, nil
 }
 
-// balanceTrends 把余额采样压到固定数量的桶。统计页每秒刷新，缓存避免重复扫描 7 天数据。
+// balanceTrends 把余额采样压到固定数量的桶。统计页每 2 秒刷新，缓存避免重复扫描 7 天数据。
 func (s *Server) balanceTrends(ctx context.Context, now time.Time) ([]BalancePoint, []BalancePoint) {
 	s.trendMu.Lock()
 	defer s.trendMu.Unlock()
@@ -268,8 +274,8 @@ func (s *Server) balanceTrends(ctx context.Context, now time.Time) ([]BalancePoi
 		return copyBalancePoints(s.trend24h), copyBalancePoints(s.trend7d)
 	}
 	s.trendAt = now
-	s.trend24h = downsampleBalance(samples, now.Add(-24*time.Hour), now, 48)
-	s.trend7d = downsampleBalance(samples, now.Add(-7*24*time.Hour), now, 28)
+	s.trend24h = downsampleBalance(samples, now.Add(-24*time.Hour), now, balance24hBucketCount)
+	s.trend7d = downsampleBalance(samples, now.Add(-7*24*time.Hour), now, balance7dBucketCount)
 	return copyBalancePoints(s.trend24h), copyBalancePoints(s.trend7d)
 }
 
@@ -283,6 +289,7 @@ func downsampleBalance(samples []store.BalanceSample, start, end time.Time, coun
 	}
 	values := make([]float64, count)
 	valid := make([]bool, count)
+	haveSample := false
 	for _, sample := range samples {
 		if sample.Timestamp.Before(start) || sample.Timestamp.After(end) {
 			continue
@@ -293,6 +300,10 @@ func downsampleBalance(samples []store.BalanceSample, start, end time.Time, coun
 		}
 		values[index] = sample.Balance
 		valid[index] = true
+		haveSample = true
+	}
+	if !haveSample {
+		return nil
 	}
 	result := make([]BalancePoint, 0, count)
 	lastValue := 0.0
@@ -304,6 +315,10 @@ func downsampleBalance(samples []store.BalanceSample, start, end time.Time, coun
 		} else if haveLast {
 			values[index] = lastValue
 		} else {
+			result = append(result, BalancePoint{
+				Unix:    start.Add(time.Duration(index) * width).Unix(),
+				Missing: true,
+			})
 			continue
 		}
 		result = append(result, BalancePoint{
@@ -323,23 +338,24 @@ func (s *Server) trace(width int) Trace {
 	frame := s.cfg.Trace.TrafficFrame(now, width)
 	activity := s.cfg.Trace.ActivityBars(now)
 	return Trace{
-		Activity:           activity,
-		ActivityBucketSecs: int(trace.DefaultActivityBucketSeconds / time.Second),
-		ActivityFullScale:  3,
-		Traffic:            convertTraffic(frame.Buckets),
-		TrafficBucketSecs:  frame.BucketSeconds.Seconds(),
-		Shift:              frame.Shift,
-		Grid:               append([]float64(nil), frame.GridLines...),
-		DownRate:           frame.DownRate,
-		UpRate:             frame.UpRate,
-		DownScale:          frame.DownScale,
-		UpScale:            frame.UpScale,
-		DownTop:            frame.DownTop,
-		UpTop:              frame.UpTop,
-		DownTotal:          frame.DownTotal,
-		UpTotal:            frame.UpTotal,
-		NowUnixNano:        now.UnixNano(),
-		Health:             s.cfg.Balance.Latest().Err == nil,
+		Activity:             activity,
+		ActivityBucketSecs:   int(trace.DefaultActivityBucketSeconds / time.Second),
+		ActivityFullScale:    3,
+		Traffic:              convertTraffic(frame.Buckets),
+		TrafficBucketSecs:    frame.BucketSeconds.Seconds(),
+		Shift:                frame.Shift,
+		Grid:                 append([]float64(nil), frame.GridLines...),
+		DownRate:             frame.DownRate,
+		UpRate:               frame.UpRate,
+		DownScale:            frame.DownScale,
+		UpScale:              frame.UpScale,
+		DownTop:              frame.DownTop,
+		UpTop:                frame.UpTop,
+		DownTotal:            frame.DownTotal,
+		UpTotal:              frame.UpTotal,
+		NowUnixNano:          now.UnixNano(),
+		LastActivityUnixNano: unixNano(s.cfg.Trace.LastActivityAt()),
+		Health:               s.cfg.Balance.Latest().Err == nil,
 	}
 }
 
@@ -452,4 +468,11 @@ func unixSeconds(at time.Time) int64 {
 		return 0
 	}
 	return at.Unix()
+}
+
+func unixNano(at time.Time) int64 {
+	if at.IsZero() {
+		return 0
+	}
+	return at.UnixNano()
 }

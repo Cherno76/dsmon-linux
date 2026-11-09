@@ -10,6 +10,7 @@ import (
 
 	"dsmon/internal/config"
 	"dsmon/internal/store"
+	"dsmon/internal/version"
 )
 
 func createCLIImportSource(t *testing.T, path string) {
@@ -50,12 +51,13 @@ func TestRunCommandValidation(t *testing.T) {
 		wantError  string
 	}{
 		{name: "no arguments", args: nil, wantCode: 2, wantError: "usage:"},
-		{name: "version", args: []string{"version"}, wantCode: 0, wantOutput: "dsmon 0.1.0-dev"},
+		{name: "version", args: []string{"version"}, wantCode: 0, wantOutput: "dsmon " + version.Current},
 		{name: "help", args: []string{"help"}, wantCode: 0, wantOutput: "dsmon import"},
 		{name: "unknown command", args: []string{"wat"}, wantCode: 2, wantError: `unknown command "wat"`},
 		{name: "tui help", args: []string{"tui", "--help"}, wantCode: 0, wantOutput: "usage: dsmon tui"},
 		{name: "settings help", args: []string{"settings", "--help"}, wantCode: 0, wantOutput: "usage: dsmon settings"},
 		{name: "settings unknown option", args: []string{"settings", "--bad"}, wantCode: 2, wantError: "unknown option"},
+		{name: "status help", args: []string{"status", "--help"}, wantCode: 0, wantOutput: "usage: dsmon status"},
 		{name: "serve help", args: []string{"serve", "--help"}, wantCode: 0, wantOutput: "dsmon serve"},
 		{name: "serve missing key", args: []string{"serve"}, wantCode: 1, wantError: "API key is not set"},
 		{name: "import without source", args: []string{"import"}, wantCode: 2, wantError: "missing source database"},

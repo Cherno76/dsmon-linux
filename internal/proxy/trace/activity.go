@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	DefaultActivityBucketSeconds = 6 * time.Second
-	DefaultActivityBucketCount   = 20
+	DefaultActivityBucketSeconds = 2 * time.Second
+	DefaultActivityBucketCount   = 3600
 )
 
 // Activity 按绝对时间分桶，记录请求发出次数；读取路径也会补零，避免空闲时曲线冻住。

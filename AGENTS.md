@@ -51,6 +51,13 @@ Linux 原生重写版 DS-mon。Go + bubbletea TUI + SQLite。当前处于规划/
 - 提交信息：英文 subject 带类型前缀（feat/fix/tweak/refactor/chore），正文可中英混排，
   写清为什么改、踩过的坑、量到的数字。
 
+## 版本号
+
+- 每次功能或修复修改完成后运行 `make bump-version`，只增加 patch，例如 `0.1.1 → 0.1.2`。
+- 版本格式固定为 `major.minor.patch`，每一位范围 `0–99`；patch/minor 到 99 时向高位进位，
+  `99.99.99` 无法继续递增。
+- `internal/version/VERSION` 是唯一版本源，TUI、设置页和 `dsmon version` 都从它读取。
+
 ## 验证分级
 
 - **低风险视觉微调**（颜色、边框、间距、网格开关、文案、面板布局；不碰数据、时序、量程、

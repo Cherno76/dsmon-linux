@@ -148,14 +148,14 @@ func ValidateProxySettings(settings ProxySettings) error {
 	settings = normalizeSettings(settings)
 	host, port, err := net.SplitHostPort(settings.ListenAddr)
 	if err != nil {
-		return fmt.Errorf("监听地址格式错误: %w", err)
+		return fmt.Errorf("invalid listen address: %w", err)
 	}
 	if host != "127.0.0.1" {
-		return errors.New("监听地址必须使用 127.0.0.1")
+		return errors.New("listen address must use 127.0.0.1")
 	}
 	number, err := strconv.Atoi(port)
 	if err != nil || number < 1 || number > 65535 {
-		return errors.New("监听端口必须是 1–65535")
+		return errors.New("listen port must be 1–65535")
 	}
 	for _, item := range []struct {
 		name string
@@ -164,7 +164,7 @@ func ValidateProxySettings(settings ProxySettings) error {
 		{"OpenAI base URL", settings.OpenAIBase},
 		{"Anthropic base URL", settings.AnthropicBase},
 		{"Tools base URL", settings.ToolsBase},
-		{"余额 URL", settings.BalanceURL},
+		{"balance URL", settings.BalanceURL},
 	} {
 		if err := validateHTTPURL(item.raw); err != nil {
 			return fmt.Errorf("%s: %w", item.name, err)
@@ -172,23 +172,23 @@ func ValidateProxySettings(settings ProxySettings) error {
 	}
 	if settings.PricingSourceURL != "" {
 		if err := validateHTTPURL(settings.PricingSourceURL); err != nil {
-			return fmt.Errorf("计费源 URL: %w", err)
+			return fmt.Errorf("pricing source URL: %w", err)
 		}
 	}
 	if !strings.HasPrefix(settings.APIPath, "/") {
-		return errors.New("API path 必须以 / 开头")
+		return errors.New("API path must start with /")
 	}
 	if settings.ProviderID == "" || settings.AuthPrefix == "" {
-		return errors.New("provider id 和鉴权前缀不能为空")
+		return errors.New("provider ID and auth prefix cannot be empty")
 	}
 	if settings.RPMLimit < 0 {
-		return errors.New("RPM 上限不能为负数")
+		return errors.New("RPM limit cannot be negative")
 	}
 	if settings.RetentionDays < 0 || settings.RetentionDays > MaxRetentionDays {
-		return fmt.Errorf("保留天数必须在 0–%d 之间", MaxRetentionDays)
+		return fmt.Errorf("retention days must be between 0 and %d", MaxRetentionDays)
 	}
 	if settings.BalanceLowThreshold < 0 || math.IsNaN(settings.BalanceLowThreshold) || math.IsInf(settings.BalanceLowThreshold, 0) {
-		return errors.New("余额阈值必须是非负有限数")
+		return errors.New("balance threshold must be a non-negative finite number")
 	}
 	return nil
 }
@@ -196,10 +196,10 @@ func ValidateProxySettings(settings ProxySettings) error {
 func validateHTTPURL(raw string) error {
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("解析 URL: %w", err)
+		return fmt.Errorf("parse URL: %w", err)
 	}
 	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return fmt.Errorf("%q 必须是绝对 http(s) URL", raw)
+		return fmt.Errorf("%q must be an absolute http(s) URL", raw)
 	}
 	return nil
 }

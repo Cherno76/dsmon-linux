@@ -63,6 +63,14 @@ make fmt     # gofmt -w .
 make vet     # go vet ./...
 ```
 
+版本号由 `internal/version/VERSION` 单一维护。每次功能或修复修改后执行：
+
+```bash
+make bump-version
+```
+
+它只增加 patch（如 `0.1.1 → 0.1.2`）；每一位最大为 99，超过时自动向前一位进位。
+
 可选的真实 Mac 库回归（默认跳过，数据不会进入仓库）：
 
 ```bash
@@ -191,6 +199,10 @@ TUI 退出不会停止代理。
 概览页包含余额与 24h/7d 采样趋势、今日指标、活动曲线、流量曲线和最近请求；用量页显示
 堆叠柱状图与分系列明细；请求页支持 100 条分页和选中行详情；计费页只读展示修订摘要。
 
+配色直接读取当前 Omarchy 生成到 `~/.local/state/omarchy/current/theme/btop.theme` 的 btop
+主题；切换 Omarchy 主题后，运行中的 TUI 会在下一次刷新自动换色，不需要重启。非 Omarchy
+环境或主题文件缺失时回退到 Tokyo Night。
+
 ## 设置
 
 ```bash
@@ -238,10 +250,25 @@ install -Dm755 build/dsmon ~/.local/bin/dsmon
 systemctl --user restart dsmon.service
 ```
 
-## Omarchy 状态栏入口
+也可以直接运行仓库里的脚本，它会完成构建、安装、重启并显示服务状态：
+
+```bash
+scripts/restart-daemon.sh
+```
+
+## Omarchy 状态栏状态图标
 
 `packaging/omarchy/cherno.dsmon` 是一个可选的 Omarchy bar-widget。安装到当前用户目录后，
-顶部右侧会出现 DS-mon 图标；点击会打开 `dsmon tui`，窗口已存在时直接聚焦，不会重复开窗。
+顶部右侧会出现 DS-mon 常驻状态图标；点击会打开 `dsmon tui`，窗口已存在时直接聚焦，不会
+重复开窗。栏图标使用 Mac 源项目的原始 PNG 资产，并保留三格传送带和指针动画；TUI 自己
+只保留静态状态文字。图标每 2 秒读取一次 `dsmon status --json`，不要求 TUI 打开：
+
+- 请求发出、上传字节或下载字节都会刷新活动时间；指针 0.4 秒扫上去，10 秒截止时间随之
+  后移，仪表使用主题强调色；
+- 指针回落中再次出现活动时，会从当前角度重新上扫；
+- 指针落底后继续强调色 15 秒，距最后活动满 25 秒恢复栏前景色；
+- 无请求：白色仪表保留，指针停在左侧低点；
+- daemon 离线、健康错误、余额错误或低余额：红色警笛慢闪。
 
 ```bash
 cp -a packaging/omarchy/cherno.dsmon ~/.config/omarchy/plugins/
@@ -253,11 +280,13 @@ omarchy restart shell
 插件实际执行的命令是：
 
 ```bash
+dsmon status --json
 omarchy-launch-or-focus-tui --app-id=dsmon-dashboard dsmon tui
 ```
 
-因此 `dsmon` 需要能在 `PATH` 中找到（通常安装在 `~/.local/bin`）。daemon 未运行时 TUI 仍会
-打开并显示断线原因。校验插件并查看栏内顺序：
+前一条用于状态轮询，后一条用于点击。因此 `dsmon` 需要能在 `PATH` 中找到（通常安装在
+`~/.local/bin`）。daemon 未运行时栏图标显示离线，TUI 仍可打开并显示断线原因。校验插件并
+查看栏内顺序：
 
 ```bash
 omarchy plugin validate packaging/omarchy/cherno.dsmon
@@ -270,6 +299,7 @@ omarchy plugin list --json
 dsmon serve                     # 代理 + 采集，SIGINT/SIGTERM 优雅退出
 dsmon tui                       # btop 风格仪表盘（分区标题边框）
 dsmon settings                  # 设置表单；SUPER + SHIFT + D 也可打开
+dsmon status --json             # 只读状态快照，供 Omarchy 栏和脚本使用
 dsmon import ~/usage.db         # 从 Mac 版导入历史数据
 ```
 

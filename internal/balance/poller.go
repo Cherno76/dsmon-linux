@@ -132,11 +132,12 @@ func (p *Poller) update(next State, success bool) {
 	previousErr := p.state.Err
 	if success {
 		if previousErr != nil && p.cfg.Logf != nil {
-			p.cfg.Logf("余额查询恢复：¥%.2f", next.Balance.Total)
+			p.cfg.Logf("balance query recovered: ¥%.2f", next.Balance.Total)
 		}
 	} else if next.Err != nil && (previousErr == nil || previousErr.Error() != next.Err.Error()) {
 		if p.cfg.Logf != nil {
-			p.cfg.Logf("余额查询失败：%s（%d 次，%s 后重试）", next.Err.Error(), next.Failures, next.NextRefreshIn)
+			p.cfg.Logf("balance query failed: %s (%d failures, retrying in %s)",
+				next.Err.Error(), next.Failures, next.NextRefreshIn)
 		}
 	}
 	p.state = next

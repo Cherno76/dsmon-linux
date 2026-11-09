@@ -18,7 +18,9 @@ type fakeBalanceSource struct{ state balance.State }
 
 func (f fakeBalanceSource) Latest() balance.State { return f.state }
 
-type fakeTraceSource struct{}
+type fakeTraceSource struct {
+	lastActivity time.Time
+}
 
 func (fakeTraceSource) ActivityBars(time.Time) []int {
 	values := make([]int, trace.DefaultActivityBucketCount)
@@ -32,8 +34,11 @@ func (fakeTraceSource) TrafficFrame(now time.Time, width int) trace.Frame {
 	return trace.MakeFrame(buckets, trace.DefaultTrafficBucketSeconds, now, float64(width*2))
 }
 
+func (f fakeTraceSource) LastActivityAt() time.Time { return f.lastActivity }
+
 func TestServerAndClientRoundTrip(t *testing.T) {
 	now := time.Date(2026, time.November, 7, 12, 0, 0, 0, time.Local)
+	lastActivity := now.Add(-3 * time.Second)
 	database, err := store.Open(filepath.Join(t.TempDir(), "usage.db"),
 		store.WithClock(func() time.Time { return now }),
 		store.WithLocation(time.Local),
@@ -75,7 +80,7 @@ func TestServerAndClientRoundTrip(t *testing.T) {
 		Path:       socket,
 		Store:      database,
 		Balance:    fakeBalanceSource{state: balance.State{HasBalance: true, Balance: balance.Snapshot{Total: 25}}},
-		Trace:      fakeTraceSource{},
+		Trace:      fakeTraceSource{lastActivity: lastActivity},
 		ListenAddr: "127.0.0.1:18080",
 		Settings: func() LiveSettings {
 			return LiveSettings{ListenAddr: "127.0.0.1:18081", BalanceLowThreshold: 10}
@@ -174,6 +179,10 @@ func TestServerAndClientRoundTrip(t *testing.T) {
 	if frame.TrafficBucketSecs != trace.DefaultTrafficBucketSeconds.Seconds() {
 		t.Fatalf("traffic bucket seconds = %v", frame.TrafficBucketSecs)
 	}
+	if frame.LastActivityUnixNano != lastActivity.UnixNano() {
+		t.Fatalf("last activity = %d, want %d",
+			frame.LastActivityUnixNano, lastActivity.UnixNano())
+	}
 	if frame.DownRate <= 0 || frame.UpRate <= 0 || len(frame.Grid) == 0 {
 		t.Fatalf("trace frame = %+v", frame)
 	}
@@ -187,6 +196,38 @@ func TestServerAndClientRoundTrip(t *testing.T) {
 	case <-reloaded:
 	case <-time.After(time.Second):
 		t.Fatal("reload callback was not called")
+	}
+}
+
+func TestDownsampleBalanceKeepsTheFullTimeWindow(t *testing.T) {
+	start := time.Date(2026, time.November, 7, 0, 0, 0, 0, time.Local)
+	end := start.Add(24 * time.Hour)
+	samples := []store.BalanceSample{
+		{Timestamp: start.Add(22 * time.Hour), Balance: 55.71},
+		{Timestamp: start.Add(22*time.Hour + 30*time.Minute), Balance: 55.80},
+	}
+	points := downsampleBalance(samples, start, end, 48)
+	if len(points) != 48 {
+		t.Fatalf("points = %d, want 48", len(points))
+	}
+	for index := 0; index < 44; index++ {
+		if !points[index].Missing {
+			t.Fatalf("bucket %d should be missing: %+v", index, points[index])
+		}
+	}
+	if points[44].Missing || points[44].Value != 55.71 {
+		t.Fatalf("first sampled bucket = %+v", points[44])
+	}
+	if points[47].Missing || points[47].Value != 55.80 {
+		t.Fatalf("last bucket = %+v", points[47])
+	}
+}
+
+func TestDownsampleBalanceWithoutSamplesReturnsNoTrend(t *testing.T) {
+	start := time.Date(2026, time.November, 7, 0, 0, 0, 0, time.Local)
+	points := downsampleBalance(nil, start, start.Add(24*time.Hour), 48)
+	if len(points) != 0 {
+		t.Fatalf("points = %+v, want none", points)
 	}
 }
 
@@ -211,13 +252,13 @@ func TestServerReloadFailureAndMissingCallback(t *testing.T) {
 		t.Fatalf("missing reload response = %+v", response)
 	}
 
-	base.Reload = func(context.Context) error { return errors.New("端口被占用") }
+	base.Reload = func(context.Context) error { return errors.New("port already in use") }
 	withFailure, err := NewServer(base)
 	if err != nil {
 		t.Fatal(err)
 	}
 	response = withFailure.handle(context.Background(), Request{V: Version, Cmd: "reload"})
-	if response.OK || response.Error != "端口被占用" {
+	if response.OK || response.Error != "port already in use" {
 		t.Fatalf("failed reload response = %+v", response)
 	}
 }

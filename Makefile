@@ -1,6 +1,6 @@
 BINARY := build/dsmon
 
-.PHONY: build install test test-ui fmt vet clean
+.PHONY: build install test test-ui fmt vet bump-version clean
 
 build:
 	go build -trimpath -o $(BINARY) ./cmd/dsmon
@@ -19,6 +19,9 @@ fmt:
 
 vet:
 	go vet ./...
+
+bump-version:
+	scripts/bump-version.sh
 
 clean:
 	rm -rf build

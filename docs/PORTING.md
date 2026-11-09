@@ -50,11 +50,14 @@
 
 | 源文件 | 处置 | 目标 / 说明 |
 |---|---|---|
-| `ActivityTrace.swift` | Port | `internal/proxy/trace`：20 × 6s，绝对时间对齐 |
-| `TrafficTrace.swift` | Port | `internal/proxy/trace`：保留 3600 × 0.5s（30 分钟），按画布宽度取可见窗口；上下行、量程、棘轮、迟滞 |
+| `ActivityTrace.swift` | Port | `internal/proxy/trace`：3600 × 2s，绝对时间对齐，按画布宽度取可见窗口 |
+| `TrafficTrace.swift` | Port | `internal/proxy/trace`：保留 3600 × 2s（2 小时），按画布宽度取可见窗口；上下行、量程、棘轮、迟滞 |
 | `ActivityCurveFrame.swift` | Adapt | `internal/tui/chart`：保留 bars/shift/grid/health，删 alpha/呼吸 |
 | `StatusBarMetrics.swift` | Adapt | 只保留曲线常量：桶宽/桶数/满量程/网格间距 |
 | `ActivityMeter.swift` | Adapt | 只保留 `idleHealth` 的健康判定；去掉回落/呼吸/光晕 |
+| `IconSpin.swift`、`GaugeNeedle.swift` | Adapt | `packaging/omarchy/cherno.dsmon`：保留 siren/warning/gauge 三格、0.45 秒/格 smoothstep、10 秒仪表及指针时间轴 |
+| `IconTrace.swift`、`IconTraceRenderer.swift` | Drop | Omarchy 栏不再显示活动线；TUI 状态使用独立曲线面板 |
+| `StatusBarController.swift`（图标状态） | Adapt | `dsmon status --json` 提供最后活动时间，Omarchy QML 使用 Mac 仪表/警报 PNG 和指针动画 |
 | `TrafficCurveRenderer.swift`、`ActivityCurveRenderer.swift` | Ref | 画法参考；Go 版用 Braille 重写 |
 | `ActivityHeat.swift` | Drop | 热力图不在 v1 |
 | `UpstreamGapMeter.swift` | Drop | 菜单栏状态用，TUI 不需要 |
@@ -88,7 +91,7 @@
 | 资源 | 处置 |
 |---|---|
 | `pricing_strategy.json` | 已复制到 `internal/pricing/pricing_strategy.json`；只改了 `comment` 里的覆盖路径（`~/.config/dsmon/`），价格数据逐字一致 |
-| `Assets.xcassets`、`dslogo*.png`、`menu_icon_*.png` | Drop |
+| `Assets.xcassets`、`dslogo*.png`、`menu_icon_*.png` | Drop | TUI 用字符绘制同类状态，不打包桌面图标资产 |
 
 ## 测试
 

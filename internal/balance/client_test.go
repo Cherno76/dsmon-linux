@@ -197,7 +197,7 @@ func TestNewClientRejectsBadURL(t *testing.T) {
 
 func TestQueryErrorMessage(t *testing.T) {
 	auth := &QueryError{Reason: ReasonAuth, StatusCode: 403}
-	if !strings.Contains(auth.Message(), "权限") {
+	if !strings.Contains(auth.Message(), "allowed") {
 		t.Fatalf("message = %q", auth.Message())
 	}
 	httpError := &QueryError{Reason: ReasonHTTP, StatusCode: 418}

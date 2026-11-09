@@ -16,6 +16,7 @@ import (
 
 	"dsmon/internal/config"
 	"dsmon/internal/ipc"
+	"dsmon/internal/version"
 )
 
 type settingsFieldDef struct {
@@ -41,22 +42,23 @@ const (
 )
 
 var settingsFields = [settingsFieldCount]settingsFieldDef{
-	{label: "API key", short: "API key", help: "留空保留旧密钥；输入只显示掩码，保存时 AES-GCM 加密", secret: true},
-	{label: "OpenAI base URL", short: "OpenAI", help: "OpenAI 兼容接口的绝对 http(s) 地址"},
-	{label: "Anthropic base URL", short: "Anthropic", help: "Anthropic Messages 接口的绝对 http(s) 地址"},
-	{label: "Tools base URL", short: "Tools", help: "Search / Fetch 工具接口地址"},
-	{label: "监听端口", short: "端口", help: "固定监听 127.0.0.1；端口范围 1–65535"},
-	{label: "RPM 上限", short: "RPM", help: "每提供商 60 秒窗口上限；0 表示关闭"},
-	{label: "余额低阈值", short: "余额阈值", help: "低于该值时余额文字变黄；0 表示关闭"},
-	{label: "保留天数", short: "保留天数", help: "0 表示永久保留；上限 3650 天"},
-	{label: "计费源 URL", short: "计费源", help: "Phase 6 抓取计费页面使用，只标记待确认，不自动写库"},
-	{label: "自动检查计费", short: "自动检查", help: "每 7 天检查一次，只生成待确认更新", toggle: true},
+	{label: "API key", short: "API key", help: "Leave blank to keep the current key; input is masked and AES-GCM encrypted on save", secret: true},
+	{label: "OpenAI base URL", short: "OpenAI", help: "Absolute http(s) URL for the OpenAI-compatible API"},
+	{label: "Anthropic base URL", short: "Anthropic", help: "Absolute http(s) URL for the Anthropic Messages API"},
+	{label: "Tools base URL", short: "Tools", help: "URL for the Search / Fetch tool endpoints"},
+	{label: "Listen port", short: "Port", help: "Always binds to 127.0.0.1; valid range is 1–65535"},
+	{label: "RPM limit", short: "RPM", help: "Per-provider 60-second request limit; 0 disables it"},
+	{label: "Balance low threshold", short: "Low balance", help: "Balance turns yellow below this value; 0 disables it"},
+	{label: "Retention days", short: "Retention", help: "0 keeps data forever; maximum is 3650 days"},
+	{label: "Pricing source URL", short: "Pricing URL", help: "Used by the Phase 6 pricing-page fetch; updates only await confirmation"},
+	{label: "Auto-check pricing", short: "Auto-check", help: "Checks every 7 days and only creates updates awaiting confirmation", toggle: true},
 }
 
 type SettingsModel struct {
 	client *ipc.Client
 	ascii  bool
 	color  bool
+	theme  palette
 
 	width  int
 	height int
@@ -88,6 +90,7 @@ func NewSettingsModel(client *ipc.Client, ascii bool, settings config.ProxySetti
 		client:   client,
 		ascii:    ascii,
 		color:    !ascii,
+		theme:    loadPalette(),
 		width:    80,
 		height:   24,
 		settings: settings,
@@ -101,7 +104,7 @@ func NewSettingsModel(client *ipc.Client, ascii bool, settings config.ProxySetti
 func RunSettings(client *ipc.Client, ascii bool) error {
 	settings, hasKey, err := config.LoadEditableSettings()
 	if err != nil {
-		return fmt.Errorf("读取设置: %w", err)
+		return fmt.Errorf("load settings: %w", err)
 	}
 	program := tea.NewProgram(NewSettingsModel(client, ascii, settings, hasKey), tea.WithAltScreen())
 	_, err = program.Run()
@@ -123,7 +126,7 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case settingsSaveMsg:
 		m.saving = false
 		if msg.saveErr != nil {
-			m.status = "保存失败: " + msg.saveErr.Error()
+			m.status = "Save failed: " + msg.saveErr.Error()
 			m.statusTone = toneError
 			return m, nil
 		}
@@ -133,15 +136,15 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editing = false
 		if msg.reloadErr != nil {
 			if reloadOffline(msg.reloadErr) {
-				m.status = "已保存；daemon 未连接，下次启动生效"
+				m.status = "Saved; daemon offline, applies on next start"
 				m.statusTone = toneWarn
 			} else {
-				m.status = "已保存，但热加载失败: " + msg.reloadErr.Error()
+				m.status = "Saved, but hot reload failed: " + msg.reloadErr.Error()
 				m.statusTone = toneError
 			}
 			return m, nil
 		}
-		m.status = "已保存并热加载"
+		m.status = "Saved and hot-reloaded"
 		m.statusTone = toneOK
 		return m, nil
 	case tea.KeyMsg:
@@ -199,7 +202,7 @@ func (m *SettingsModel) updateKey(key string) (tea.Model, tea.Cmd) {
 	case "enter", " ":
 		if settingsFields[m.focus].toggle {
 			m.settings.PricingAutoCheck = !m.settings.PricingAutoCheck
-			m.status = "自动检查已切换，尚未保存"
+			m.status = "Pricing auto-check toggled; not saved yet"
 			m.statusTone = toneMuted
 			return m, nil
 		}
@@ -214,12 +217,12 @@ func (m *SettingsModel) updateKey(key string) (tea.Model, tea.Cmd) {
 func (m *SettingsModel) startSave() tea.Cmd {
 	settings, apiKey, err := m.commit()
 	if err != nil {
-		m.status = "校验失败: " + err.Error()
+		m.status = "Validation failed: " + err.Error()
 		m.statusTone = toneError
 		return nil
 	}
 	m.saving = true
-	m.status = "保存中…"
+	m.status = "Saving..."
 	m.statusTone = toneAccent
 	return settingsSaveCmd(m.client, settings, apiKey, m.hasKey)
 }
@@ -272,17 +275,17 @@ func (m *SettingsModel) commit() (config.ProxySettings, string, error) {
 		return config.ProxySettings{}, "", err
 	}
 	settings.ListenAddr = net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
-	rpm, err := parseNonNegativeInt(m.editors[settingsRPMLimit], "RPM 上限")
+	rpm, err := parseNonNegativeInt(m.editors[settingsRPMLimit], "RPM limit")
 	if err != nil {
 		return config.ProxySettings{}, "", err
 	}
 	settings.RPMLimit = rpm
 	threshold, err := strconv.ParseFloat(strings.TrimSpace(m.editors[settingsBalanceLow]), 64)
 	if err != nil {
-		return config.ProxySettings{}, "", errors.New("余额阈值必须是数字")
+		return config.ProxySettings{}, "", errors.New("balance threshold must be a number")
 	}
 	settings.BalanceLowThreshold = threshold
-	retention, err := parseNonNegativeInt(m.editors[settingsRetentionDays], "保留天数")
+	retention, err := parseNonNegativeInt(m.editors[settingsRetentionDays], "retention days")
 	if err != nil {
 		return config.ProxySettings{}, "", err
 	}
@@ -305,16 +308,16 @@ func parseListenPort(raw string) (int, error) {
 	if strings.Contains(raw, ":") {
 		host, port, err := net.SplitHostPort(raw)
 		if err != nil {
-			return 0, fmt.Errorf("监听端口格式错误: %w", err)
+			return 0, fmt.Errorf("invalid listen port: %w", err)
 		}
 		if host != "127.0.0.1" {
-			return 0, errors.New("监听地址必须使用 127.0.0.1")
+			return 0, errors.New("listen address must use 127.0.0.1")
 		}
 		raw = port
 	}
 	port, err := strconv.Atoi(raw)
 	if err != nil || port < 1 || port > 65535 {
-		return 0, errors.New("监听端口必须是 1–65535")
+		return 0, errors.New("listen port must be 1–65535")
 	}
 	return port, nil
 }
@@ -322,10 +325,10 @@ func parseListenPort(raw string) (int, error) {
 func parseNonNegativeInt(raw, name string) (int, error) {
 	value, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil {
-		return 0, fmt.Errorf("%s必须是整数", name)
+		return 0, fmt.Errorf("%s must be an integer", name)
 	}
 	if value < 0 {
-		return 0, fmt.Errorf("%s不能为负数", name)
+		return 0, fmt.Errorf("%s cannot be negative", name)
 	}
 	return value, nil
 }
@@ -379,18 +382,18 @@ func renderSettings(m *SettingsModel) string {
 	}
 	width := maxInt(1, m.width)
 	height := maxInt(1, m.height)
-	header := newRenderer(width, 2, m.ascii, m.color)
-	header.add(toneTitle, " DS-mon 设置")
-	header.add(toneMuted, " ↑↓/tab 选择 · enter 编辑 · ctrl+s 保存 · q 退出")
+	header := newRenderer(width, 2, m.ascii, m.color, m.theme)
+	header.add(toneTitle, " DS-mon %s Settings", version.Current)
+	header.add(toneMuted, " ↑↓/tab select · enter edit · ctrl+s save · q quit")
 	bodyHeight := maxInt(0, height-4)
-	body := newRenderer(width, bodyHeight, m.ascii, m.color)
+	body := newRenderer(width, bodyHeight, m.ascii, m.color, m.theme)
 	for index := 0; index < settingsFieldCount; index++ {
 		field := settingsFields[index]
 		selected := index == m.focus
 		if selected {
 			label := field.label
 			if field.secret && m.hasKey && m.editors[index] == "" {
-				label += "（已保存）"
+				label += " (saved)"
 			}
 			body.add(toneAccent, " ▶ %s", label)
 			value := m.fieldValue(index)
@@ -404,17 +407,17 @@ func renderSettings(m *SettingsModel) string {
 		label := field.short
 		body.add(toneNormal, "   %-12s %s", label, m.fieldValue(index))
 	}
-	status := newRenderer(width, 1, m.ascii, m.color)
+	status := newRenderer(width, 1, m.ascii, m.color, m.theme)
 	if m.status != "" {
 		status.add(m.statusTone, " %s", m.status)
 	} else {
-		status.add(toneMuted, " 改动只在 ctrl+s 后写入；API key 不显示明文")
+		status.add(toneMuted, " Changes are written only after ctrl+s; API keys are never shown in plaintext")
 	}
-	footer := newRenderer(width, 1, m.ascii, m.color)
+	footer := newRenderer(width, 1, m.ascii, m.color, m.theme)
 	if m.editing {
-		footer.add(toneMuted, " 输入中  Enter 完成  Tab 下一项  Esc 撤销")
+		footer.add(toneMuted, " Editing  Enter done  Tab next  Esc revert")
 	} else {
-		footer.add(toneMuted, " 设置写入 ~/.config/dsmon/config.toml  ·  ctrl+s 保存  ·  q 退出")
+		footer.add(toneMuted, " Writes ~/.config/dsmon/config.toml  ·  ctrl+s save  ·  q quit")
 	}
 
 	lines := append(header.finish(), body.finish()...)
@@ -432,18 +435,18 @@ func renderSettings(m *SettingsModel) string {
 func (m *SettingsModel) fieldValue(index int) string {
 	if index == settingsPricingAuto {
 		if m.settings.PricingAutoCheck {
-			return "开"
+			return "On"
 		}
-		return "关"
+		return "Off"
 	}
 	if index == settingsAPIKey {
 		if m.editors[index] != "" {
 			return "********"
 		}
 		if m.hasKey {
-			return "********（留空保留）"
+			return "******** (leave blank to keep)"
 		}
-		return "未设置（留空保留）"
+		return "Not set (leave blank to keep)"
 	}
 	return m.editorText(index)
 }
@@ -454,7 +457,7 @@ func (m *SettingsModel) editorText(index int) string {
 		return "********"
 	}
 	if text == "" {
-		return "（空）"
+		return "(empty)"
 	}
 	return tailText(text, maxInt(4, m.width-18))
 }

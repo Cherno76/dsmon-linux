@@ -82,7 +82,7 @@ func TestSettingsSaveEncryptsKeyAndReportsOfflineReload(t *testing.T) {
 		t.Fatalf("ctrl+s returned no command: %s", model.status)
 	}
 	_, _ = model.Update(command())
-	if !strings.Contains(model.status, "已保存") || !strings.Contains(model.status, "下次启动") {
+	if !strings.Contains(model.status, "Saved") || !strings.Contains(model.status, "next start") {
 		t.Fatalf("offline save status = %q", model.status)
 	}
 	if model.editors[settingsAPIKey] != "" {
@@ -128,7 +128,7 @@ func TestSettingsInvalidPortDoesNotWriteFile(t *testing.T) {
 	if command != nil {
 		_, _ = model.Update(command())
 	}
-	if !strings.Contains(model.status, "监听端口") {
+	if !strings.Contains(model.status, "listen port") {
 		t.Fatalf("status = %q", model.status)
 	}
 	after, err := os.ReadFile(config.ConfigPath())

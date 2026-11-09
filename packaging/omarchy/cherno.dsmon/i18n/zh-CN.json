@@ -1,3 +1,8 @@
 {
-  "tooltip": "打开 DS-mon 仪表盘"
+  "status.loading": "DS-mon loading",
+  "status.offline": "DS-mon offline · open dashboard",
+  "status.error": "DS-mon error · open dashboard",
+  "status.balance": "DS-mon balance warning · open dashboard",
+  "status.active": "DS-mon active",
+  "status.idle": "DS-mon idle"
 }

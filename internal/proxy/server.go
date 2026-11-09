@@ -20,13 +20,15 @@ import (
 )
 
 const (
-	MaxConcurrentRequests   = 64
-	MaxRequestBodyBytes     = 20 * 1024 * 1024
-	RequestReceiveTimeout   = 120 * time.Second
-	DefaultListenAddress    = "127.0.0.1:18080"
-	DefaultResponseBuffer   = 8 * 1024 * 1024
-	DefaultToolBuffer       = 20 * 1024 * 1024
-	anthropicDefaultVersion = "2023-06-01"
+	MaxConcurrentRequests    = 64
+	MaxRequestBodyBytes      = 50 * 1024 * 1024
+	MaxImageOffloadBodyBytes = 128 * 1024 * 1024
+	UpstreamBodyLimit        = 48 * 1024 * 1024
+	RequestReceiveTimeout    = 120 * time.Second
+	DefaultListenAddress     = "127.0.0.1:18080"
+	DefaultResponseBuffer    = 8 * 1024 * 1024
+	DefaultToolBuffer        = 20 * 1024 * 1024
+	anthropicDefaultVersion  = "2023-06-01"
 )
 
 type Config struct {
@@ -62,6 +64,7 @@ type Server struct {
 	cfgMu     sync.RWMutex
 	cfg       Config
 	transport *http.Transport
+	offload   *largeImageOffloader
 	limiter   *Limiter
 	curves    *curveState
 	slots     chan struct{}
@@ -74,6 +77,8 @@ type curveState struct {
 	ratchet  trace.Ratchet
 	rateHold trace.RateHold
 	now      func() time.Time
+
+	lastActivityAt time.Time
 }
 
 func NewServer(cfg Config) (*Server, error) {
@@ -82,9 +87,11 @@ func NewServer(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	now := cfg.Now()
+	transport := newUpstreamTransport()
 	return &Server{
 		cfg:       cfg,
-		transport: newUpstreamTransport(),
+		transport: transport,
+		offload:   newLargeImageOffloader(transport),
 		limiter:   NewLimiter(cfg.Now),
 		curves: &curveState{
 			activity: trace.NewActivity(now),
@@ -242,11 +249,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	started := cfg.Now()
-	body, err := readRequestBody(w, r, cfg.MaxRequestBytes)
+	readLimit := requestBodyReadLimit(cfg, target)
+	body, err := readRequestBody(w, r, readLimit)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, errRequestBodyTooLarge) {
 			status = http.StatusRequestEntityTooLarge
+			cfg.Logf("reject %s: request body exceeds %s (Content-Length: %d)",
+				target.endpoint, requestLimitLabel(readLimit), r.ContentLength)
 		}
 		if !target.auxiliary {
 			s.recordFailure(cfg, requestAccount{
@@ -254,7 +264,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				userAgent: r.UserAgent(), providerID: cfg.ProviderID,
 			}, status)
 		}
-		writeProxyError(w, status, err.Error())
+		message := err.Error()
+		if errors.Is(err, errRequestBodyTooLarge) {
+			message = fmt.Sprintf("request body exceeds %s limit",
+				requestLimitLabel(readLimit))
+		}
+		writeProxyError(w, status, message)
 		return
 	}
 
@@ -278,9 +293,38 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	forwardedBody := body
+	offloadedFileIDs := []string(nil)
+	if shouldOffloadImages(cfg, target) {
+		offloadResult := s.offload.run(r.Context(), body, target.base, cfg.APIKey, cfg.ProviderID,
+			func(bytes int) { s.curves.RecordUpload(bytes) })
+		if offloadResult.changed {
+			forwardedBody = offloadResult.body
+			offloadedFileIDs = offloadResult.fileIDs
+			cfg.Logf("image offload: moved %d, uploaded %d, body %d -> %d bytes",
+				offloadResult.moved, offloadResult.uploaded, len(body), len(forwardedBody))
+			if int64(len(forwardedBody)) > UpstreamBodyLimit {
+				cfg.Logf("image offload: rewritten body is still %d bytes, upstream may reject it",
+					len(forwardedBody))
+			}
+		} else if offloadResult.failureNote != "" {
+			cfg.Logf("image offload skipped: %s", offloadResult.failureNote)
+		}
+	}
+	if requestBodyStillTooLarge(body, forwardedBody, cfg.MaxRequestBytes) {
+		recordFailure(http.StatusRequestEntityTooLarge)
+		cfg.Logf("reject %s: body %d -> %d bytes, still over %s after image offload",
+			target.endpoint, len(body), len(forwardedBody),
+			requestLimitLabel(cfg.MaxRequestBytes))
+		writeProxyError(w, http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("request body exceeds %s limit after image offload",
+				requestLimitLabel(cfg.MaxRequestBytes)))
+		return
+	}
+
 	headers := upstreamHeaders(cfg, r, target)
 	upstreamRequest, err := BuildUpstreamRequest(r.Context(), r.Method, r.URL.RequestURI(), headers,
-		body, target.base, cfg.APIPath, cfg.APIKey, cfg.AuthPrefix)
+		forwardedBody, target.base, cfg.APIPath, cfg.APIKey, cfg.AuthPrefix)
 	if err != nil {
 		recordFailure(http.StatusBadGateway)
 		cfg.Logf("build upstream request: %v", err)
@@ -318,6 +362,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if statusCode != http.StatusOK {
+		preview := collector.PreviewText()
+		if isUpstreamBodyLimit(statusCode, preview) {
+			cfg.Logf("upstream rejected %s: body is %d bytes; start a new session or reduce inline images",
+				target.endpoint, len(forwardedBody))
+		}
+		if isMissingFileIDError(statusCode, preview) && len(offloadedFileIDs) > 0 {
+			s.offload.cache.remove(offloadedFileIDs)
+			cfg.Logf("upstream rejected %d file_id references; cache cleared for the next request",
+				len(offloadedFileIDs))
+		}
 		account.started = started
 		recordFailure(statusCode)
 		return
@@ -427,7 +481,32 @@ func readRequestBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byt
 	return body, nil
 }
 
-var errRequestBodyTooLarge = errors.New("request body exceeds 20MB limit")
+func requestBodyReadLimit(cfg Config, target route) int64 {
+	if shouldOffloadImages(cfg, target) {
+		return MaxImageOffloadBodyBytes
+	}
+	return cfg.MaxRequestBytes
+}
+
+func requestBodyStillTooLarge(received, forwarded []byte, limit int64) bool {
+	return int64(len(received)) > limit && int64(len(forwarded)) > limit
+}
+
+func shouldOffloadImages(cfg Config, target route) bool {
+	return target.protocol == ProtocolOpenAI &&
+		strings.EqualFold(cfg.ProviderID, "deepseek") &&
+		cfg.APIKey != ""
+}
+
+var errRequestBodyTooLarge = errors.New("request body too large")
+
+func requestLimitLabel(limit int64) string {
+	const mebibyte = 1024 * 1024
+	if limit > 0 && limit%mebibyte == 0 {
+		return fmt.Sprintf("%dMiB", limit/mebibyte)
+	}
+	return fmt.Sprintf("%dB", limit)
+}
 
 func (s *Server) copyResponse(w http.ResponseWriter, body io.Reader,
 	analyzer *DecodedResponseAnalyzer, streaming bool) error {
@@ -548,6 +627,12 @@ func (s *Server) ActivityBars(now time.Time) []int {
 	return s.curves.activity.Bars(now)
 }
 
+func (s *Server) LastActivityAt() time.Time {
+	s.curves.mu.Lock()
+	defer s.curves.mu.Unlock()
+	return s.curves.lastActivityAt
+}
+
 func (s *Server) TrafficBuckets(now time.Time) []trace.Bucket {
 	s.curves.mu.Lock()
 	defer s.curves.mu.Unlock()
@@ -587,19 +672,29 @@ func (s *Server) TrafficFrame(now time.Time, cellWidth int) trace.Frame {
 func (c *curveState) RecordRequest() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.activity.Record(c.now())
+	now := c.now()
+	c.activity.Record(now)
+	c.lastActivityAt = now
 }
 
 func (c *curveState) RecordUpload(bytes int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.traffic.Record(bytes, 0, c.now())
+	now := c.now()
+	c.traffic.Record(bytes, 0, now)
+	if bytes > 0 {
+		c.lastActivityAt = now
+	}
 }
 
 func (c *curveState) RecordDownload(bytes int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.traffic.Record(0, bytes, c.now())
+	now := c.now()
+	c.traffic.Record(0, bytes, now)
+	if bytes > 0 {
+		c.lastActivityAt = now
+	}
 }
 
 func (s *Server) Listen() (net.Listener, error) {

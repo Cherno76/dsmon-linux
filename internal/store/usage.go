@@ -179,8 +179,13 @@ func (s *Store) refreshClientNames(ctx context.Context, tx *sql.Tx) error {
 	_ = tx.QueryRowContext(ctx, "SELECT value FROM meta WHERE key = 'client_inference_version'").Scan(&stored)
 	if stored != fmt.Sprint(ClientInferenceVersion) {
 		if _, err := tx.ExecContext(ctx, `
+			UPDATE usage_log SET client = 'codex'
+			WHERE client = 'Codex Desktop' OR lower(client) LIKE 'codex-%'`); err != nil {
+			return fmt.Errorf("merge legacy codex clients: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
 			UPDATE usage_log SET client = CASE
-				WHEN endpoint LIKE '%/responses%' THEN 'Codex Desktop'
+				WHEN endpoint LIKE '%/responses%' THEN 'codex'
 				WHEN endpoint LIKE '%/chat/completions%' THEN 'opencode'
 				ELSE client END
 			WHERE user_agent = '' AND client = ''`); err != nil {

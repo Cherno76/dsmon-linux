@@ -70,8 +70,8 @@ func TestActivityAlignmentAndDefaults(t *testing.T) {
 			early.Anchor(), early.Counts(), late.Anchor(), late.Counts())
 	}
 	defaults := NewActivity(at)
-	if defaults.BucketCount() != 20 || defaults.BucketSeconds() != 6*time.Second ||
-		len(defaults.Counts()) != 20 {
+	if defaults.BucketCount() != 3600 || defaults.BucketSeconds() != 2*time.Second ||
+		len(defaults.Counts()) != 3600 {
 		t.Fatalf("defaults = %d buckets x %s", defaults.BucketCount(), defaults.BucketSeconds())
 	}
 }

@@ -14,19 +14,46 @@ import (
 	"dsmon/internal/ipc"
 	"dsmon/internal/proxy/trace"
 	"dsmon/internal/store"
+	"dsmon/internal/version"
 )
 
 func TestPeriodSelectorShowsSixExplicitRanges(t *testing.T) {
-	got := periodSelector(store.PeriodThisMonth)
-	for _, want := range []string{"1今日", "2昨日", "3近7天", "4近30天", "[5本月]", "6上月"} {
+	segments := periodSelectorSegments(store.PeriodThisMonth, "#abcdef")
+	got := segmentsText(segments)
+	for _, want := range []string{"¹Today", "²Yest.", "³7d", "⁴30d", "[⁵Month]", "⁶Prev. m"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("period selector missing %q: %q", want, got)
 		}
 	}
-	for _, unwanted := range []string{"[7", "7自定义", "自定义", "1–7", "1-7", "切换"} {
+	for _, unwanted := range []string{"[7", "⁷", "Custom", "1–7", "1-7", "switch"} {
 		if strings.Contains(got, unwanted) {
 			t.Fatalf("period selector still contains %q: %q", unwanted, got)
 		}
+	}
+	var shortcuts string
+	for _, segment := range segments {
+		if segment.color == "#abcdef" {
+			shortcuts += segment.text
+		}
+	}
+	if shortcuts != "¹²³⁴⁵⁶" {
+		t.Fatalf("period shortcuts = %q", shortcuts)
+	}
+}
+
+func TestDimensionSelectorUsesBracketAndAccentKeys(t *testing.T) {
+	segments := dimensionSelectorSegments(store.DimensionModel, "#abcdef")
+	if got := segmentsText(segments); got != "by [model] client" {
+		t.Fatalf("dimension selector = %q", got)
+	}
+	var shortcuts string
+	for _, segment := range segments {
+		if segment.color == "#abcdef" {
+			shortcuts += segment.text
+		}
+	}
+	if shortcuts != "mc" {
+		t.Fatalf("dimension shortcuts = %q", shortcuts)
 	}
 }
 
@@ -48,6 +75,7 @@ func sampleModel() *Model {
 	midnight := time.Date(2026, time.November, 7, 0, 0, 0, 0, time.Local)
 	model := NewModel(nil, false)
 	model.color = false
+	model.theme = fallbackPalette()
 	model.stats = ipc.Stats{
 		ProxyRunning: true,
 		ListenAddr:   "127.0.0.1:18080",
@@ -71,10 +99,12 @@ func sampleModel() *Model {
 	traffic := make([]ipc.TrafficBucket, trace.DefaultTrafficBucketCount)
 	traffic[len(traffic)-1] = ipc.TrafficBucket{Upload: 512, Download: 4096}
 	model.trace = ipc.Trace{
-		Activity: activity, ActivityBucketSecs: 6, ActivityFullScale: 3,
-		Traffic: traffic, TrafficBucketSecs: 0.5, Shift: 2,
+		Activity: activity, ActivityBucketSecs: int(trace.DefaultActivityBucketSeconds / time.Second),
+		ActivityFullScale: 3,
+		Traffic:           traffic, TrafficBucketSecs: trace.DefaultTrafficBucketSeconds.Seconds(), Shift: 2,
 		Grid: []float64{10, 30}, DownRate: 4096, UpRate: 512,
-		DownScale: 8192, UpScale: 2048, NowUnixNano: now.UnixNano(), Health: true,
+		DownScale: 8192, UpScale: 2048, NowUnixNano: now.UnixNano(),
+		Health: true,
 	}
 	model.series = ipc.Series{
 		Range: string(store.PeriodToday), Dimension: string(store.DimensionModel), Bucket: string(store.BucketHour),
@@ -139,7 +169,7 @@ func TestRenderEmptyAndSingleRequestStates(t *testing.T) {
 	for _, page := range []Page{PageOverview, PageUsage, PageRequests, PagePricing} {
 		empty.page = page
 		output := assertCanvas(t, empty, 80, 24)
-		if !strings.Contains(output, "暂无") && page != PagePricing {
+		if !strings.Contains(output, "No ") && page != PagePricing {
 			t.Fatalf("empty page %d lacks an empty-state message: %q", page, output)
 		}
 	}
@@ -149,7 +179,7 @@ func TestRenderEmptyAndSingleRequestStates(t *testing.T) {
 	single.requests.Total = 1
 	single.requests.Rows = single.requests.Rows[:1]
 	output := assertCanvas(t, single, 80, 24)
-	for _, want := range []string{"1–1 / 1", "选中", "/v1/chat/completions"} {
+	for _, want := range []string{"1–1 / 1", "Selected", "/v1/chat/completions"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("single request page missing %q", want)
 		}
@@ -161,10 +191,10 @@ func TestRenderUsesTitledPanels(t *testing.T) {
 		page   Page
 		titles []string
 	}{
-		{PageOverview, []string{"╭─┐账户┌", "╭─┐活动", "╭─┐流量", "╭─┐最近请求┌"}},
-		{PageUsage, []string{"╭─┐查询范围┌", "╭─┐用量趋势", "╭─┐系列明细"}},
-		{PageRequests, []string{"╭─┐请求 1–2 / 3", "╭─┐请求详情┌"}},
-		{PagePricing, []string{"╭─┐计费修订┌", "╭─┐说明┌"}},
+		{PageOverview, []string{"╭─┐Account┌", "╭─┐Activity", "╭─┐Traffic", "╭─┐Recent requests┌"}},
+		{PageUsage, []string{"╭─┐Query range┌", "╭─┐Usage trend", "╭─┐Series details"}},
+		{PageRequests, []string{"╭─┐Requests 1–2 / 3", "╭─┐Request details┌"}},
+		{PagePricing, []string{"╭─┐Pricing revisions┌", "╭─┐Notes┌"}},
 	}
 	for _, test := range tests {
 		model := sampleModel()
@@ -186,8 +216,92 @@ func TestRenderUsesTitledPanels(t *testing.T) {
 	ascii.ascii = true
 	ascii.color = false
 	output := assertCanvas(t, ascii, 80, 24)
-	if !strings.Contains(output, "+-+账户+") || strings.Contains(output, "╭─┐") {
+	if !strings.Contains(output, "+-+Account+") || strings.Contains(output, "╭─┐") {
 		t.Fatalf("ASCII panel fallback = %q", output)
+	}
+}
+
+func TestNavigationUsesLowercaseHotkeysAndRightAlignedActions(t *testing.T) {
+	model := sampleModel()
+	model.page = PageOverview
+	segments := model.navigationSegments(100)
+	text := segmentsText(segments)
+	for _, want := range []string{"overview", "usage", "requests", "pricing", "settings", "help", "quit"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("navigation missing %q: %q", want, text)
+		}
+	}
+	if got := lipgloss.Width(text); got != 100 {
+		t.Fatalf("navigation width = %d, want 100: %q", got, text)
+	}
+	if !strings.HasSuffix(strings.TrimRight(text, " "), "quit") {
+		t.Fatalf("actions are not right aligned: %q", text)
+	}
+
+	var shortcuts []string
+	whiteText := false
+	for _, segment := range segments {
+		if segment.color == model.theme.Accent {
+			shortcuts = append(shortcuts, segment.text)
+		}
+		if segment.color == navigationTextColor && strings.TrimSpace(segment.text) != "" {
+			whiteText = true
+		}
+	}
+	if got, want := strings.Join(shortcuts, ""), "ouepshq"; got != want {
+		t.Fatalf("navigation shortcuts = %q, want %q", got, want)
+	}
+	if !whiteText {
+		t.Fatal("navigation text was not rendered in white")
+	}
+}
+
+func TestNavigationShortcutsSwitchPagesAndHelp(t *testing.T) {
+	model := sampleModel()
+	tests := []struct {
+		key  string
+		page Page
+	}{
+		{"u", PageUsage},
+		{"e", PageRequests},
+		{"p", PagePricing},
+		{"o", PageOverview},
+	}
+	for _, test := range tests {
+		_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(test.key)})
+		if model.page != test.page {
+			t.Fatalf("key %q page = %v, want %v", test.key, model.page, test.page)
+		}
+	}
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	if !model.help {
+		t.Fatal("h did not open help")
+	}
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	if model.help {
+		t.Fatal("h did not close help")
+	}
+}
+
+func TestFooterHintIsRemoved(t *testing.T) {
+	model := sampleModel()
+	output := assertCanvas(t, model, 100, 30)
+	if strings.Contains(output, "Tab pages") || strings.Contains(output, "1-6 range") {
+		t.Fatalf("footer hint is still present: %q", output)
+	}
+}
+
+func TestBrandShowsVersion(t *testing.T) {
+	model := sampleModel()
+	output := assertCanvas(t, model, 100, 30)
+	if !strings.Contains(output, "DS-mon "+version.Current) {
+		t.Fatalf("dashboard header is missing version: %q", output)
+	}
+
+	settings := NewSettingsModel(nil, true, settingsFixture(), false)
+	settingsOutput := renderSettingsAt(t, settings, 100, 30)
+	if !strings.Contains(settingsOutput, "DS-mon "+version.Current+" Settings") {
+		t.Fatalf("settings header is missing version: %q", settingsOutput)
 	}
 }
 
@@ -200,9 +314,9 @@ func TestPanelBordersMatchBtopBoxShape(t *testing.T) {
 		wantStart string
 		wantEnd   string
 	}{
-		{"unicode", 32, "活动", false, "╭─┐活动┌", "╮"},
-		{"unicode long title", 32, "最近请求", false, "╭─┐最近请求┌", "╮"},
-		{"ascii", 32, "活动", true, "+-+活动+", "+"},
+		{"unicode", 32, "Activity", false, "╭─┐Activity┌", "╮"},
+		{"unicode long title", 32, "Recent requests", false, "╭─┐Recent requests┌", "╮"},
+		{"ascii", 32, "Activity", true, "+-+Activity+", "+"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -235,7 +349,7 @@ func TestRenderHelpDateEditorAndASCIIFallback(t *testing.T) {
 	model := sampleModel()
 	model.help = true
 	output := assertCanvas(t, model, 80, 24)
-	if !strings.Contains(output, "帮助") || !strings.Contains(output, "Tab") {
+	if !strings.Contains(output, "Help") || !strings.Contains(output, "Tab") {
 		t.Fatalf("help page = %q", output)
 	}
 
@@ -244,7 +358,7 @@ func TestRenderHelpDateEditorAndASCIIFallback(t *testing.T) {
 	model.editingDates = true
 	model.dateFields = [2]string{"2026-11-01", "2026-11-07"}
 	output = assertCanvas(t, model, 80, 24)
-	if !strings.Contains(output, "自定义日期") || !strings.Contains(output, "[2026-11-01]") {
+	if !strings.Contains(output, "Custom date") || !strings.Contains(output, "[2026-11-01]") {
 		t.Fatalf("date editor = %q", output)
 	}
 
@@ -334,14 +448,14 @@ func TestOverviewActivitySharesAccountRowAtRightThird(t *testing.T) {
 	lines := strings.Split(output, "\n")
 	accountRow := -1
 	for index, line := range lines {
-		if !strings.HasPrefix(line, "╭─┐账户") {
+		if !strings.HasPrefix(line, "╭─┐Account") {
 			continue
 		}
 		accountRow = index
-		if !strings.Contains(line, "活动 · 2 分钟") {
+		if !strings.Contains(line, "Activity ·") {
 			t.Fatalf("activity is not on the account row: %q", line)
 		}
-		activityByte := strings.Index(line, "活动")
+		activityByte := strings.Index(line, "Activity")
 		activityColumn := lipgloss.Width(line[:activityByte])
 		if activityColumn < 100*2/3 || activityColumn > 100*2/3+6 {
 			t.Fatalf("activity starts at column %d, want right third around %d", activityColumn, 100*2/3)
@@ -352,7 +466,7 @@ func TestOverviewActivitySharesAccountRowAtRightThird(t *testing.T) {
 		t.Fatalf("account panel is missing: %q", output)
 	}
 	for index, line := range lines {
-		if strings.HasPrefix(line, "╭─┐流量 · ") {
+		if strings.HasPrefix(line, "╭─┐Traffic · ") {
 			if index <= accountRow {
 				t.Fatalf("traffic panel is above the account row: %d <= %d", index, accountRow)
 			}
@@ -658,6 +772,63 @@ func TestBalanceSparklineKeepsRequestedWidth(t *testing.T) {
 	}
 }
 
+func TestBalanceTrendLeavesUnsampledTimeEmpty(t *testing.T) {
+	points := []ipc.BalancePoint{
+		{Unix: 1, Missing: true},
+		{Unix: 2, Missing: true},
+		{Unix: 3, Value: 20},
+		{Unix: 4, Value: 19},
+	}
+	for _, braille := range []bool{false, true} {
+		line := balanceSparkline(points, 4, braille)
+		if lipgloss.Width(line) != 4 {
+			t.Fatalf("braille=%v width = %d, want 4: %q", braille, lipgloss.Width(line), line)
+		}
+		if !strings.HasPrefix(line, "  ") {
+			t.Fatalf("braille=%v missing lead-in was stretched: %q", braille, line)
+		}
+		if strings.TrimSpace(line[2:]) == "" {
+			t.Fatalf("braille=%v sampled tail was not drawn: %q", braille, line)
+		}
+	}
+}
+
+func TestBalanceRangeIgnoresMissingBuckets(t *testing.T) {
+	points := []ipc.BalancePoint{
+		{Missing: true},
+		{Value: 21.5},
+		{Missing: true},
+		{Value: 20},
+	}
+	if got := balanceRangeLabel(points); got != "20.00–21.50" {
+		t.Fatalf("range = %q", got)
+	}
+}
+
+func TestBalanceTrendExpandsShortCoverageAndLabelsItsSpan(t *testing.T) {
+	points := make([]ipc.BalancePoint, 288)
+	for index := range points {
+		points[index] = ipc.BalancePoint{Unix: int64(index * 300), Missing: true}
+	}
+	for index := 258; index < len(points); index++ {
+		points[index].Missing = false
+		points[index].Value = 60 - float64(index-258)/10
+	}
+	if got := balanceTrendLabel("24h", points, 24*time.Hour); got != "24h·2.5h" {
+		t.Fatalf("label = %q, want 24h·2.5h", got)
+	}
+
+	model := sampleModel()
+	strict := segmentsText(balanceSparklineSegments(points, 8, true))
+	expanded := segmentsText(model.balanceSparklineSegments(points, 8, true, 24*time.Hour))
+	if !strings.HasPrefix(strict, "      ") {
+		t.Fatalf("strict trend did not preserve leading gap: %q", strict)
+	}
+	if strings.HasPrefix(expanded, " ") {
+		t.Fatalf("short-coverage trend was not expanded: %q", expanded)
+	}
+}
+
 func TestBalanceTrendGradientVariesWithHeight(t *testing.T) {
 	points := []ipc.BalancePoint{{Unix: 1, Value: 10}, {Unix: 2, Value: 20}}
 	segments := balanceSparklineSegments(points, 4, true)
@@ -676,7 +847,7 @@ func TestBalanceTrendLabelsAxes(t *testing.T) {
 	model := sampleModel()
 	model.ascii = false
 	line := model.balanceTrendLine(100)
-	for _, want := range []string{"余额", "24h", "7d", "22.22–23.00", "22.22–25.00", "时间→"} {
+	for _, want := range []string{"Balance", "24h", "7d", "22.22–23.00", "22.22–25.00", "Time→"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("balance trend axes missing %q: %q", want, line)
 		}
@@ -688,7 +859,7 @@ func TestUsageChartLabelsAxesAndFillsWidth(t *testing.T) {
 	model.page = PageUsage
 	model.ascii = false
 	output := assertCanvas(t, model, 100, 30)
-	for _, want := range []string{"tokens", "按模型", "┤", "└", "→", "⣿", "00:00", "06:00", "12:00"} {
+	for _, want := range []string{"tokens", "by [model] client", "┤", "└", "→", "⣿", "00:00", "06:00", "12:00"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("usage chart axes missing %q: %q", want, output)
 		}
@@ -820,7 +991,7 @@ func TestUsageChartYAxisLabelsStayAligned(t *testing.T) {
 	}
 }
 
-func TestUsageBarGradientGoesGreenYellowRed(t *testing.T) {
+func TestHeightGradientGoesGreenYellowRed(t *testing.T) {
 	cases := []struct {
 		level float64
 		want  string
@@ -836,34 +1007,34 @@ func TestUsageBarGradientGoesGreenYellowRed(t *testing.T) {
 	}
 }
 
-func TestUsageChartColorsRowsByHeight(t *testing.T) {
+func TestUsageChartColorsStackedSeriesBySeries(t *testing.T) {
 	model := sampleModel()
 	model.ascii = false
 	r := newRenderer(24, 6, false, true)
-	totals := []usageTotal{{Name: "full", HitTokens: 100}}
-	buckets := [][]usageTotal{{{Name: "full", HitTokens: 100}}}
+	model.theme = fallbackPalette()
+	totals := []usageTotal{{Name: "beta", HitTokens: 50}, {Name: "alpha", HitTokens: 50}}
+	buckets := [][]usageTotal{{{Name: "alpha", HitTokens: 50}, {Name: "beta", HitTokens: 50}}}
 	model.appendUsageChart(r, totals, buckets, 1, 6)
-	colorAt := func(row int) string {
-		t.Helper()
-		for _, segment := range r.lines[row].segments {
+	colors := usageSeriesColorMap(totals, model.theme)
+	if colors["alpha"] == colors["beta"] {
+		t.Fatalf("series colors are not distinct: %+v", colors)
+	}
+	seen := map[string]bool{}
+	for _, line := range r.lines {
+		for _, segment := range line.segments {
 			if segment.color != "" {
-				return segment.color
+				seen[segment.color] = true
 			}
 		}
-		t.Fatalf("row %d has no colored bar segment: %+v", row, r.lines[row])
-		return ""
 	}
-	if got := colorAt(3); got != "#9ece6a" {
-		t.Fatalf("bottom row color = %q, want #9ece6a", got)
-	}
-	if got := colorAt(0); got != "#f7768e" {
-		t.Fatalf("top row color = %q, want #f7768e", got)
+	if !seen[colors["alpha"]] || !seen[colors["beta"]] {
+		t.Fatalf("stacked series colors missing: seen=%v colors=%v", seen, colors)
 	}
 }
 
 func TestPanelPreservesSegmentColors(t *testing.T) {
 	r := newRenderer(40, 3, false, true)
-	r.panel("趋势", 3, toneBoxAccount, func(panel *renderer) {
+	r.panel("Trend", 3, toneBoxAccount, func(panel *renderer) {
 		panel.addSegments(toneNormal,
 			uiSegment{text: "A", tone: toneNormal, color: "#f7768e"},
 			uiSegment{text: "B", tone: toneNormal, color: "#9ece6a"})
@@ -906,13 +1077,22 @@ func TestTrafficRendererUsesBrailleDots(t *testing.T) {
 	}
 }
 
-func TestActivityHasNoVerticalGrid(t *testing.T) {
+func TestActivityHasSingleHorizontalBaselineAndNoVerticalGrid(t *testing.T) {
 	now := time.Unix(104*int64(trace.DefaultActivityBucketSeconds/time.Second), 0)
 	rows := RenderActivity(make([]int, 20), 40, 6, now, 1)
-	for rowIndex, row := range rows {
+	for rowIndex, row := range rows[:len(rows)-1] {
 		if strings.TrimSpace(row) != "" {
-			t.Fatalf("row %d contains a vertical grid line: %q", rowIndex, row)
+			t.Fatalf("row %d should stay empty: %q", rowIndex, row)
 		}
+	}
+	baseline := rows[len(rows)-1]
+	if strings.TrimSpace(baseline) == "" {
+		t.Fatal("activity baseline is missing")
+	}
+	if strings.ContainsFunc(baseline, func(value rune) bool {
+		return value != '⣀'
+	}) {
+		t.Fatalf("activity baseline is not continuous: %q", baseline)
 	}
 }
 
@@ -928,6 +1108,68 @@ func TestActivityCurveStillRendersWithoutGrid(t *testing.T) {
 		return value >= 0x2800 && value <= 0x28ff
 	}) {
 		t.Fatalf("activity curve did not render: %q", rows)
+	}
+}
+
+func TestActivityWindowFollowsPanelWidth(t *testing.T) {
+	model := sampleModel()
+	model.trace.ActivityBucketSecs = int(trace.DefaultActivityBucketSeconds / time.Second)
+	if got := model.activityTitle(30); got != "Activity · 120 sec · 3 req/cell" {
+		t.Fatalf("activity title = %q", got)
+	}
+
+	counts := make([]int, trace.DefaultActivityBucketCount)
+	counts[len(counts)-1] = 3
+	now := time.Unix(104*int64(trace.DefaultActivityBucketSeconds/time.Second), 0)
+	rows := RenderActivity(counts, 40, 6, now, 3)
+	runes := []rune(rows[0])
+	for index := 0; index < len(runes)-1; index++ {
+		if runes[index] != ' ' {
+			t.Fatalf("activity history was stretched into column %d: %q", index, rows[0])
+		}
+	}
+	if runes[len(runes)-1] == ' ' {
+		t.Fatalf("latest activity bucket is not right aligned: %q", rows[0])
+	}
+}
+
+func TestActivityGradientColorsRowsByHeight(t *testing.T) {
+	model := sampleModel()
+	model.ascii = false
+	model.theme = fallbackPalette()
+	model.trace.Health = true
+	model.trace.Activity = make([]int, trace.DefaultActivityBucketCount)
+	model.trace.ActivityFullScale = 3
+	model.trace.Activity[len(model.trace.Activity)-1] = 3
+	r := newRenderer(40, 6, false, true, model.theme)
+	model.appendActivityChart(r, 6)
+	if len(r.lines) != 6 {
+		t.Fatalf("activity rows = %d, want 6", len(r.lines))
+	}
+	top := r.lines[0].segments[0].color
+	bottom := r.lines[len(r.lines)-1].segments[0].color
+	if top != "#f7768e" || bottom != "#9ece6a" {
+		t.Fatalf("activity gradient top=%q bottom=%q", top, bottom)
+	}
+}
+
+func TestActivityFaultStaysSolidRed(t *testing.T) {
+	model := sampleModel()
+	model.ascii = false
+	model.trace.Health = false
+	model.trace.Activity = make([]int, trace.DefaultActivityBucketCount)
+	model.trace.ActivityFullScale = 3
+	r := newRenderer(40, 6, false, true, model.theme)
+	model.appendActivityChart(r, 6)
+	for index, line := range r.lines {
+		if line.tone != toneError {
+			t.Fatalf("row %d tone = %v, want error", index, line.tone)
+		}
+		for _, segment := range line.segments {
+			if segment.color != "" {
+				t.Fatalf("fault row %d used gradient color %q", index, segment.color)
+			}
+		}
 	}
 }
 
