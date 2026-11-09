@@ -11,18 +11,26 @@ BarWidget {
   id: root
   moduleName: "cherno.dsmon"
 
-  property bool statusLoaded: false
-  property bool daemonOnline: false
-  property bool health: false
-  property bool balanceError: false
-  property bool balanceLow: false
-  property bool balanceHas: false
-  property real balance: 0
-  property int requestsToday: 0
-  property real costToday: 0
-  property real lastActivityMs: 0
-  property real serverNowMs: 0
-  property real responseReceivedMs: 0
+  // The optional service owns the 2-second status poll. Keeping it here too
+  // would launch a second `dsmon status` process for every refresh.
+  property int serviceRevision: 0
+  readonly property var statusService: {
+    serviceRevision
+    if (!bar || !bar.shell || typeof bar.shell.serviceFor !== "function") return null
+    return bar.shell.serviceFor("cherno.dsmon")
+  }
+  readonly property bool statusLoaded: statusService ? statusService.statusLoaded : false
+  readonly property bool daemonOnline: statusService ? statusService.daemonOnline : false
+  readonly property bool health: statusService ? statusService.health : false
+  readonly property bool balanceError: statusService ? statusService.balanceError : false
+  readonly property bool balanceLow: statusService ? statusService.balanceLow : false
+  readonly property bool balanceHas: statusService ? statusService.balanceHas : false
+  readonly property real balance: statusService ? statusService.balance : 0
+  readonly property int requestsToday: statusService ? statusService.requestsToday : 0
+  readonly property real costToday: statusService ? statusService.costToday : 0
+  readonly property real lastActivityMs: statusService ? statusService.lastActivityMs : 0
+  readonly property real serverNowMs: statusService ? statusService.serverNowMs : 0
+  readonly property real responseReceivedMs: statusService ? statusService.responseReceivedMs : 0
 
   property real animationClockMs: Date.now()
   property real slotPosition: 2
@@ -78,62 +86,6 @@ BarWidget {
       "dsmon",
       "tui"
     ])
-  }
-
-  function refresh() {
-    if (!statusProc.running) statusProc.running = true
-  }
-
-  function boundedNumber(value, minimum, maximum, fallback) {
-    const number = Number(value)
-    if (!isFinite(number)) return fallback
-    return Math.min(maximum, Math.max(minimum, number))
-  }
-
-  function applyStatus(text) {
-    var value
-    try {
-      value = JSON.parse(String(text || ""))
-    } catch (error) {
-      setOffline()
-      return
-    }
-    if (!value || typeof value.online !== "boolean") {
-      setOffline()
-      return
-    }
-    const received = Date.now()
-    statusLoaded = true
-    daemonOnline = value.online
-    health = value.health === true
-    balanceError = value.balance_error === true
-    balanceLow = value.balance_low === true
-    balanceHas = value.balance_has === true
-    balance = boundedNumber(value.balance, 0, 1e12, 0)
-    requestsToday = Math.floor(boundedNumber(value.requests_today, 0, 1e9, 0))
-    costToday = boundedNumber(value.cost_today, 0, 1e12, 0)
-    const legacyLastActivityNs = boundedNumber(value.last_activity_unix_nano, 0, 9e18, 0)
-    const legacyServerNowNs = boundedNumber(value.server_now_unix_nano, 0, 9e18, 0)
-    lastActivityMs = value.last_activity_unix_ms !== undefined
-      ? boundedNumber(value.last_activity_unix_ms, 0, 9e15, 0)
-      : legacyLastActivityNs / 1e6
-    serverNowMs = value.server_now_unix_ms !== undefined
-      ? boundedNumber(value.server_now_unix_ms, 0, 9e15, 0)
-      : legacyServerNowNs / 1e6
-    responseReceivedMs = received
-    tick(received)
-  }
-
-  function setOffline() {
-    statusLoaded = true
-    daemonOnline = false
-    health = false
-    balanceError = false
-    balanceLow = false
-    lastActivityMs = 0
-    serverNowMs = 0
-    responseReceivedMs = Date.now()
-    tick(Date.now())
   }
 
   function smoothstep(value) {
@@ -288,14 +240,7 @@ BarWidget {
   implicitHeight: button.implicitHeight
 
   Component.onCompleted: tick(Date.now())
-
-  Timer {
-    interval: 2000
-    running: true
-    repeat: true
-    triggeredOnStart: true
-    onTriggered: root.refresh()
-  }
+  onStatusServiceChanged: tick(Date.now())
 
   Timer {
     interval: root.iconAnimating ? 33 : 100
@@ -305,16 +250,11 @@ BarWidget {
     onTriggered: root.tick(Date.now())
   }
 
-  Process {
-    id: statusProc
-    command: ["dsmon", "status", "--json"]
-    onExited: function(exitCode) {
-      if (exitCode !== 0) root.setOffline()
-    }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applyStatus(text)
-    }
+  Timer {
+    interval: 500
+    running: root.statusService === null
+    repeat: true
+    onTriggered: root.serviceRevision++
   }
 
   BarIconButton {

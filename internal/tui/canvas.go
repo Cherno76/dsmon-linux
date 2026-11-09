@@ -114,7 +114,7 @@ func RenderActivity(counts []int, width, height int, now time.Time, fullScale in
 	phase := trace.BucketPhase(now, trace.DefaultActivityBucketSeconds)
 
 	for x := 0; x < dotsWidth; x++ {
-		position := float64(x-offset) - phase
+		position := float64(x-offset) + phase
 		if position < 0 {
 			continue
 		}

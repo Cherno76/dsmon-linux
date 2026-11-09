@@ -180,6 +180,7 @@ func (r *serveRuntime) Settings() ipc.LiveSettings {
 	return ipc.LiveSettings{
 		ListenAddr:          generation.settings.ListenAddr,
 		BalanceLowThreshold: generation.settings.BalanceLowThreshold,
+		ActivityCardEnabled: generation.settings.ActivityCardEnabled,
 	}
 }
 

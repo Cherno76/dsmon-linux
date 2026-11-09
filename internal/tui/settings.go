@@ -38,6 +38,7 @@ const (
 	settingsRetentionDays
 	settingsPricingSource
 	settingsPricingAuto
+	settingsActivityCard
 	settingsFieldCount
 )
 
@@ -52,6 +53,7 @@ var settingsFields = [settingsFieldCount]settingsFieldDef{
 	{label: "Retention days", short: "Retention", help: "0 keeps data forever; maximum is 3650 days"},
 	{label: "Pricing source URL", short: "Pricing URL", help: "Used by the Phase 6 pricing-page fetch; updates only await confirmation"},
 	{label: "Auto-check pricing", short: "Auto-check", help: "Checks every 7 days and only creates updates awaiting confirmation", toggle: true},
+	{label: "Activity card", short: "Activity card", help: "Shows the right-side Omarchy card after requests or network activity", toggle: true},
 }
 
 type SettingsModel struct {
@@ -201,8 +203,14 @@ func (m *SettingsModel) updateKey(key string) (tea.Model, tea.Cmd) {
 		m.focus = (m.focus + settingsFieldCount - 1) % settingsFieldCount
 	case "enter", " ":
 		if settingsFields[m.focus].toggle {
-			m.settings.PricingAutoCheck = !m.settings.PricingAutoCheck
-			m.status = "Pricing auto-check toggled; not saved yet"
+			switch m.focus {
+			case settingsPricingAuto:
+				m.settings.PricingAutoCheck = !m.settings.PricingAutoCheck
+				m.status = "Pricing auto-check toggled; not saved yet"
+			case settingsActivityCard:
+				m.settings.ActivityCardEnabled = !m.settings.ActivityCardEnabled
+				m.status = "Activity card toggled; not saved yet"
+			}
 			m.statusTone = toneMuted
 			return m, nil
 		}
@@ -433,8 +441,15 @@ func renderSettings(m *SettingsModel) string {
 }
 
 func (m *SettingsModel) fieldValue(index int) string {
-	if index == settingsPricingAuto {
-		if m.settings.PricingAutoCheck {
+	if settingsFields[index].toggle {
+		enabled := false
+		switch index {
+		case settingsPricingAuto:
+			enabled = m.settings.PricingAutoCheck
+		case settingsActivityCard:
+			enabled = m.settings.ActivityCardEnabled
+		}
+		if enabled {
 			return "On"
 		}
 		return "Off"

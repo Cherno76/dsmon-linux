@@ -36,6 +36,7 @@ type ProxySettings struct {
 	RetentionDays       int
 	PricingSourceURL    string
 	PricingAutoCheck    bool
+	ActivityCardEnabled bool
 }
 
 func LoadProxySettings() (ProxySettings, error) {

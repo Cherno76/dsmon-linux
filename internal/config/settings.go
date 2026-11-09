@@ -39,6 +39,7 @@ func defaultProxySettings() ProxySettings {
 		RetentionDays:       DefaultRetentionDays,
 		PricingSourceURL:    DefaultPricingSource,
 		PricingAutoCheck:    true,
+		ActivityCardEnabled: false,
 		BalanceLowThreshold: 0,
 	}
 }
@@ -256,7 +257,9 @@ func marshalSettings(settings ProxySettings, apiKeyEnc string) []byte {
 	fmt.Fprintf(&buffer, "retention_days = %d\n\n", settings.RetentionDays)
 	buffer.WriteString("[pricing]\n")
 	fmt.Fprintf(&buffer, "source_url = %s\n", strconv.Quote(settings.PricingSourceURL))
-	fmt.Fprintf(&buffer, "auto_check = %t\n", settings.PricingAutoCheck)
+	fmt.Fprintf(&buffer, "auto_check = %t\n\n", settings.PricingAutoCheck)
+	buffer.WriteString("[ui]\n")
+	fmt.Fprintf(&buffer, "activity_card = %t\n", settings.ActivityCardEnabled)
 	return buffer.Bytes()
 }
 
@@ -275,7 +278,7 @@ func parseSettingsTOML(data []byte) (fileSettings, error) {
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section = strings.ToLower(strings.TrimSpace(line[1 : len(line)-1]))
 			switch section {
-			case "proxy", "balance", "storage", "pricing":
+			case "proxy", "balance", "storage", "pricing", "ui":
 			default:
 				return fileSettings{}, fmt.Errorf("line %d: unknown section [%s]", lineNumber, section)
 			}
@@ -369,6 +372,8 @@ func applySettingValue(result *fileSettings, section, key string, value any) err
 		result.settings.PricingSourceURL, err = asString()
 	case "pricing.auto_check":
 		result.settings.PricingAutoCheck, err = asBool()
+	case "ui.activity_card":
+		result.settings.ActivityCardEnabled, err = asBool()
 	default:
 		return fmt.Errorf("unknown key %s.%s", section, key)
 	}

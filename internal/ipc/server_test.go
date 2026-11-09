@@ -83,7 +83,7 @@ func TestServerAndClientRoundTrip(t *testing.T) {
 		Trace:      fakeTraceSource{lastActivity: lastActivity},
 		ListenAddr: "127.0.0.1:18080",
 		Settings: func() LiveSettings {
-			return LiveSettings{ListenAddr: "127.0.0.1:18081", BalanceLowThreshold: 10}
+			return LiveSettings{ListenAddr: "127.0.0.1:18081", BalanceLowThreshold: 10, ActivityCardEnabled: true}
 		},
 		Reload: func(context.Context) error {
 			reloaded <- struct{}{}
@@ -121,7 +121,7 @@ func TestServerAndClientRoundTrip(t *testing.T) {
 		t.Fatalf("stats: %v", err)
 	}
 	if !stats.ProxyRunning || stats.ListenAddr != "127.0.0.1:18081" ||
-		stats.BalanceLowThreshold != 10 || stats.Today.Requests != 2 {
+		stats.BalanceLowThreshold != 10 || !stats.ActivityCardEnabled || stats.Today.Requests != 2 {
 		t.Fatalf("stats = %+v", stats)
 	}
 	if !stats.Balance.Has || stats.Balance.Total != 25 {

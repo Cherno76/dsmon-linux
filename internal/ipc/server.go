@@ -39,6 +39,7 @@ type TraceSource interface {
 type LiveSettings struct {
 	ListenAddr          string
 	BalanceLowThreshold float64
+	ActivityCardEnabled bool
 }
 
 type Config struct {
@@ -228,15 +229,18 @@ func (s *Server) stats(ctx context.Context) (Stats, error) {
 	trend24h, trend7d := s.balanceTrends(ctx, s.cfg.Now())
 	listenAddr := s.cfg.ListenAddr
 	lowThreshold := s.cfg.BalanceLowThreshold
+	activityCardEnabled := false
 	if s.cfg.Settings != nil {
 		live := s.cfg.Settings()
 		listenAddr = live.ListenAddr
 		lowThreshold = live.BalanceLowThreshold
+		activityCardEnabled = live.ActivityCardEnabled
 	}
 	return Stats{
 		ProxyRunning:        true,
 		ListenAddr:          listenAddr,
 		BalanceLowThreshold: lowThreshold,
+		ActivityCardEnabled: activityCardEnabled,
 		Health:              health,
 		Balance: Balance{
 			Has:                balanceState.HasBalance,

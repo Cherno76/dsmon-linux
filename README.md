@@ -261,7 +261,8 @@ scripts/restart-daemon.sh
 `packaging/omarchy/cherno.dsmon` 是一个可选的 Omarchy bar-widget。安装到当前用户目录后，
 顶部右侧会出现 DS-mon 常驻状态图标；点击会打开 `dsmon tui`，窗口已存在时直接聚焦，不会
 重复开窗。栏图标使用 Mac 源项目的原始 PNG 资产，并保留三格传送带和指针动画；TUI 自己
-只保留静态状态文字。图标每 2 秒读取一次 `dsmon status --json`，不要求 TUI 打开：
+只保留静态状态文字。插件由 bar-widget 和 service 两部分组成，共用一次每 2 秒的
+`dsmon status --json` 轮询，不要求 TUI 打开：
 
 - 请求发出、上传字节或下载字节都会刷新活动时间；指针 0.4 秒扫上去，10 秒截止时间随之
   后移；
@@ -272,6 +273,19 @@ scripts/restart-daemon.sh
   图标隐藏或减弱动态效果时立即取消；
 - 无请求：黑白仪表保留，指针停在左侧低点；
 - daemon 离线、健康错误、余额错误或低余额：红色警笛慢闪。
+
+可在 `dsmon settings` 中打开 `Activity card` 开关，或直接写入：
+
+```toml
+[ui]
+activity_card = true
+```
+
+开关默认关闭。打开后，请求或非零上下行流量会把竖条从当前屏幕右侧上沿拉出，显示余额、
+今日 tokens、请求数、缓存命中率、今日费用、请求曲线和流量曲线；最后一次活动满 10 秒后
+滑回屏幕边缘，只留下 5px。把鼠标移到这条残边上会重新滑出，移开且没有新活动时再次收回。
+竖条采用 Mac 侧边刘海的贴边凹角和纵向排列，但仍是独立展示的 layer-shell overlay，不抢
+键盘焦点。它不是 Mac 版刘海面板，也不占用屏幕工作区。
 
 ```bash
 cp -a packaging/omarchy/cherno.dsmon ~/.config/omarchy/plugins/

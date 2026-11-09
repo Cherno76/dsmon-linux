@@ -59,6 +59,7 @@ type Stats struct {
 	ProxyRunning        bool         `json:"proxy_running"`
 	ListenAddr          string       `json:"listen_addr"`
 	BalanceLowThreshold float64      `json:"balance_low_threshold"`
+	ActivityCardEnabled bool         `json:"activity_card_enabled"`
 	Health              bool         `json:"health"`
 	Balance             Balance      `json:"balance"`
 	Today               Aggregate    `json:"today"`

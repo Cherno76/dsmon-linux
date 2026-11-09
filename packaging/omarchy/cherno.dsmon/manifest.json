@@ -2,14 +2,16 @@
   "schemaVersion": 1,
   "id": "cherno.dsmon",
   "name": "DS-mon",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "author": "cherno",
   "description": "Live DS-mon gauge status and dashboard launcher",
   "kinds": [
-    "bar-widget"
+    "bar-widget",
+    "service"
   ],
   "entryPoints": {
-    "barWidget": "BarWidget.qml"
+    "barWidget": "BarWidget.qml",
+    "service": "ActivityCard.qml"
   },
   "barWidget": {
     "displayName": "DS-mon",

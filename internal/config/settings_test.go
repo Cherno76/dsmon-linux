@@ -21,7 +21,7 @@ func TestLoadEditableSettingsDefaults(t *testing.T) {
 		settings.AnthropicBase != DefaultAnthropicBase || settings.ToolsBase != DefaultOpenAIBase ||
 		settings.BalanceURL != DefaultOpenAIBase+DefaultBalancePath ||
 		settings.RetentionDays != DefaultRetentionDays || settings.PricingSourceURL != DefaultPricingSource ||
-		!settings.PricingAutoCheck || settings.APIKey != "" {
+		!settings.PricingAutoCheck || settings.ActivityCardEnabled || settings.APIKey != "" {
 		t.Fatalf("defaults = %+v", settings)
 	}
 }
@@ -40,6 +40,7 @@ func TestSaveProxySettingsRoundTripAndPermissions(t *testing.T) {
 	settings.RetentionDays = 45
 	settings.PricingSourceURL = "http://127.0.0.1:19005/pricing"
 	settings.PricingAutoCheck = false
+	settings.ActivityCardEnabled = true
 	const secret = "sk-round-trip-secret"
 
 	if err := SaveProxySettingsTo(configPath, keyPath, settings, secret); err != nil {
@@ -76,7 +77,8 @@ func TestSaveProxySettingsRoundTripAndPermissions(t *testing.T) {
 		loaded.ToolsBase != settings.ToolsBase || loaded.RPMLimit != settings.RPMLimit ||
 		loaded.BalanceURL != settings.BalanceURL || loaded.BalanceLowThreshold != settings.BalanceLowThreshold ||
 		loaded.RetentionDays != settings.RetentionDays ||
-		loaded.PricingSourceURL != settings.PricingSourceURL || loaded.PricingAutoCheck {
+		loaded.PricingSourceURL != settings.PricingSourceURL || loaded.PricingAutoCheck ||
+		!loaded.ActivityCardEnabled {
 		t.Fatalf("loaded settings = %+v", loaded)
 	}
 }
@@ -183,6 +185,7 @@ func TestLoadProxySettingsRejectsMalformedFile(t *testing.T) {
 		{name: "bad URL", data: "[proxy]\nopenai_base = \"not-a-url\"\n", want: "OpenAI base URL"},
 		{name: "bad retention", data: "[storage]\nretention_days = 3651\n", want: "retention days"},
 		{name: "bad threshold", data: "[balance]\nlow_threshold = -1\n", want: "balance threshold"},
+		{name: "bad activity card", data: "[ui]\nactivity_card = \"yes\"\n", want: "expects true or false"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

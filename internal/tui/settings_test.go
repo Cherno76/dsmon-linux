@@ -27,6 +27,7 @@ func settingsFixture() config.ProxySettings {
 		RetentionDays:       180,
 		PricingSourceURL:    config.DefaultPricingSource,
 		PricingAutoCheck:    true,
+		ActivityCardEnabled: false,
 	}
 }
 
@@ -153,5 +154,21 @@ func TestSettingsCommitDerivesBalanceURLAndTogglesPricing(t *testing.T) {
 		settings.BalanceURL != "http://127.0.0.1:19001/user/balance" ||
 		settings.PricingAutoCheck {
 		t.Fatalf("committed settings = %+v", settings)
+	}
+}
+
+func TestSettingsTogglesActivityCard(t *testing.T) {
+	model := NewSettingsModel(nil, true, settingsFixture(), false)
+	model.focus = settingsActivityCard
+	model.updateKey("enter")
+	if !model.settings.ActivityCardEnabled {
+		t.Fatal("activity card toggle did not turn on")
+	}
+	if value := model.fieldValue(settingsActivityCard); value != "On" {
+		t.Fatalf("activity card value = %q", value)
+	}
+	model.updateKey("enter")
+	if model.settings.ActivityCardEnabled {
+		t.Fatal("activity card toggle did not turn off")
 	}
 }

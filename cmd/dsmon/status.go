@@ -12,20 +12,43 @@ import (
 	"dsmon/internal/ipc"
 )
 
+const (
+	statusTraceWidth  = 80
+	statusCurvePoints = statusTraceWidth * 2
+)
+
 type statusSnapshot struct {
-	Online               bool    `json:"online"`
-	ProxyRunning         bool    `json:"proxy_running"`
-	Health               bool    `json:"health"`
-	BalanceError         bool    `json:"balance_error"`
-	BalanceLow           bool    `json:"balance_low"`
-	BalanceHas           bool    `json:"balance_has"`
-	Balance              float64 `json:"balance"`
-	RequestsToday        int     `json:"requests_today"`
-	CostToday            float64 `json:"cost_today"`
-	LastActivityUnixNano int64   `json:"last_activity_unix_nano,omitempty"`
-	ServerNowUnixNano    int64   `json:"server_now_unix_nano,omitempty"`
-	LastActivityUnixMS   int64   `json:"last_activity_unix_ms,omitempty"`
-	ServerNowUnixMS      int64   `json:"server_now_unix_ms,omitempty"`
+	Online               bool                  `json:"online"`
+	ProxyRunning         bool                  `json:"proxy_running"`
+	Health               bool                  `json:"health"`
+	ActivityCardEnabled  bool                  `json:"activity_card_enabled"`
+	BalanceError         bool                  `json:"balance_error"`
+	BalanceLow           bool                  `json:"balance_low"`
+	BalanceHas           bool                  `json:"balance_has"`
+	Balance              float64               `json:"balance"`
+	RequestsToday        int                   `json:"requests_today"`
+	TokensToday          int                   `json:"tokens_today"`
+	CacheHitRate         float64               `json:"cache_hit_rate"`
+	CostToday            float64               `json:"cost_today"`
+	LastActivityUnixNano int64                 `json:"last_activity_unix_nano,omitempty"`
+	ServerNowUnixNano    int64                 `json:"server_now_unix_nano,omitempty"`
+	LastActivityUnixMS   int64                 `json:"last_activity_unix_ms,omitempty"`
+	ServerNowUnixMS      int64                 `json:"server_now_unix_ms,omitempty"`
+	Activity             []int                 `json:"activity,omitempty"`
+	ActivityBucketSecs   int                   `json:"activity_bucket_seconds,omitempty"`
+	ActivityFullScale    int                   `json:"activity_full_scale,omitempty"`
+	Traffic              []statusTrafficBucket `json:"traffic,omitempty"`
+	TrafficBucketSecs    float64               `json:"traffic_bucket_seconds,omitempty"`
+	TrafficShift         float64               `json:"traffic_shift,omitempty"`
+	DownRate             float64               `json:"down_rate"`
+	UpRate               float64               `json:"up_rate"`
+	DownScale            float64               `json:"down_scale"`
+	UpScale              float64               `json:"up_scale"`
+}
+
+type statusTrafficBucket struct {
+	Upload   int `json:"upload"`
+	Download int `json:"download"`
 }
 
 func runStatus(args []string, stdout, stderr io.Writer) int {
@@ -48,7 +71,7 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	stats, statsErr := client.Stats(ctx)
-	trace, traceErr := client.Trace(ctx, 20)
+	trace, traceErr := client.Trace(ctx, statusTraceWidth)
 	snapshot := offlineStatusSnapshot()
 	var err error
 	switch {
@@ -90,21 +113,58 @@ func snapshotFromIPC(stats ipc.Stats, trace ipc.Trace) statusSnapshot {
 		serverNowMS = trace.NowUnixNano / int64(time.Millisecond)
 	}
 	return statusSnapshot{
-		Online:       true,
-		ProxyRunning: stats.ProxyRunning,
-		Health:       stats.Health,
-		BalanceError: strings.TrimSpace(stats.Balance.Error) != "",
+		Online:              true,
+		ProxyRunning:        stats.ProxyRunning,
+		Health:              stats.Health,
+		ActivityCardEnabled: stats.ActivityCardEnabled,
+		BalanceError:        strings.TrimSpace(stats.Balance.Error) != "",
 		BalanceLow: stats.BalanceLowThreshold > 0 && stats.Balance.Has &&
 			stats.Balance.Total < stats.BalanceLowThreshold,
 		BalanceHas:           stats.Balance.Has,
 		Balance:              stats.Balance.Total,
 		RequestsToday:        stats.Today.Requests,
+		TokensToday:          stats.Today.TotalTokens,
+		CacheHitRate:         stats.Today.CacheHitRate,
 		CostToday:            stats.Today.Cost,
 		LastActivityUnixNano: trace.LastActivityUnixNano,
 		ServerNowUnixNano:    trace.NowUnixNano,
 		LastActivityUnixMS:   lastActivityMS,
 		ServerNowUnixMS:      serverNowMS,
+		Activity:             tailInts(trace.Activity, statusCurvePoints),
+		ActivityBucketSecs:   trace.ActivityBucketSecs,
+		ActivityFullScale:    trace.ActivityFullScale,
+		Traffic:              tailTraffic(trace.Traffic, statusCurvePoints),
+		TrafficBucketSecs:    trace.TrafficBucketSecs,
+		TrafficShift:         trace.Shift,
+		DownRate:             trace.DownRate,
+		UpRate:               trace.UpRate,
+		DownScale:            trace.DownScale,
+		UpScale:              trace.UpScale,
 	}
+}
+
+func tailInts(values []int, count int) []int {
+	if len(values) == 0 || count <= 0 {
+		return nil
+	}
+	if len(values) > count {
+		values = values[len(values)-count:]
+	}
+	return append([]int(nil), values...)
+}
+
+func tailTraffic(values []ipc.TrafficBucket, count int) []statusTrafficBucket {
+	if len(values) == 0 || count <= 0 {
+		return nil
+	}
+	if len(values) > count {
+		values = values[len(values)-count:]
+	}
+	result := make([]statusTrafficBucket, len(values))
+	for index, bucket := range values {
+		result[index] = statusTrafficBucket{Upload: bucket.Upload, Download: bucket.Download}
+	}
+	return result
 }
 
 func offlineStatusSnapshot() statusSnapshot {

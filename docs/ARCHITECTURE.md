@@ -78,10 +78,13 @@
 `reload` 让 daemon 重新读取并校验配置：成功返回时新设置已经生效；失败时旧监听/旧轮询继续运行，
 错误原样返回给设置页。
 
-`stats` 同时返回当前监听地址和余额低阈值，使端口/阈值热加载后 TUI 立即看到新值。
+`stats` 同时返回当前监听地址、余额低阈值和 `activity_card_enabled`，使端口/阈值/UI 开关
+热加载后 TUI 立即看到新值。
 TUI 的实时帧和历史查询都走 socket；TUI 不直接写库，也不长期持有 SQLite 连接。
 `dsmon status --json` 只组合 `stats` 与 `trace` 的只读快照，供不使用 TUI 的 Omarchy
-bar-widget 轮询；它不新增写路径，也不输出密钥、鉴权头、正文或上游原始错误文本。
+bar-widget 与可选活动卡片轮询；它不新增写路径，也不输出密钥、鉴权头、正文或上游原始
+错误文本。JSON 在在线时还包含今日 tokens/命中率/费用、最近 160 个活动桶与流量桶、量程、
+速率以及 `activity_card_enabled`；离线快照只保留稳定的空字段，不泄漏 socket 错误文本。
 
 ## 代理
 
