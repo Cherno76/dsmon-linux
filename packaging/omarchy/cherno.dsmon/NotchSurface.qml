@@ -7,18 +7,42 @@ Canvas {
 
   property color fillColor: "#151515"
   property color borderColor: "#303030"
+  property var borderSpec: null
   property real borderWidth: 1
   property real flare: 7
   property real corner: 10
 
   onFillColorChanged: requestPaint()
   onBorderColorChanged: requestPaint()
+  onBorderSpecChanged: requestPaint()
   onBorderWidthChanged: requestPaint()
   onFlareChanged: requestPaint()
   onCornerChanged: requestPaint()
   onWidthChanged: requestPaint()
   onHeightChanged: requestPaint()
   onVisibleChanged: if (visible) requestPaint()
+
+  function borderStrokeStyle(ctx) {
+    const spec = root.borderSpec
+    const gradient = spec && spec.gradient
+    if (!gradient || !gradient.enabled || !gradient.colors || gradient.colors.length < 2)
+      return spec && spec.color ? spec.color : root.borderColor
+
+    const rad = (Number(gradient.angle) || 0) * Math.PI / 180
+    const dx = Math.cos(rad)
+    const dy = Math.sin(rad)
+    const length = (Math.abs(width * dx) + Math.abs(height * dy)) / 2
+    const stroke = ctx.createLinearGradient(
+      width / 2 - dx * length,
+      height / 2 - dy * length,
+      width / 2 + dx * length,
+      height / 2 + dy * length
+    )
+    const last = gradient.colors.length - 1
+    for (let index = 0; index <= last; index++)
+      stroke.addColorStop(index / last, gradient.colors[index])
+    return stroke
+  }
 
   onPaint: {
     const ctx = getContext("2d")
@@ -56,7 +80,8 @@ Canvas {
       ctx.lineTo(w - f, h - f)
       ctx.quadraticCurveTo(w, h - f, w, h)
       ctx.lineWidth = root.borderWidth
-      ctx.strokeStyle = root.borderColor
+      // hover 时复用 Omarchy 活动窗口边框的共享颜色/渐变定义。
+      ctx.strokeStyle = root.borderStrokeStyle(ctx)
       ctx.stroke()
     }
   }

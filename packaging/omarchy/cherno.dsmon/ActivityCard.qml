@@ -46,6 +46,8 @@ Item {
   property real downScale: 0
   property real upScale: 0
   property color inactiveBorderColor: Commons.Color.popups.border
+  readonly property var activeBorderSpec:
+    Border.hyprlandActiveSpec(Commons.Color.accent, Math.max(1, compactSpace(1)))
   property real windowOpacity: 1
   property var chartColors: ({
     tempStart: "#9ece6a",
@@ -443,6 +445,7 @@ Item {
       opacity: root.windowOpacity
       fillColor: Commons.Color.popups.background
       borderColor: root.inactiveBorderColor
+      borderSpec: root.cardHovered ? root.activeBorderSpec : null
       borderWidth: Math.max(1, compactSpace(1))
       flare: root.notchFlare
       corner: root.notchCorner

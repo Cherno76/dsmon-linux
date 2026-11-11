@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "cherno.dsmon",
   "name": "DS-mon",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "author": "cherno",
   "description": "Live DS-mon gauge status and dashboard launcher",
   "kinds": [

@@ -930,3 +930,12 @@
 - 决定：右侧凹角的 `flare` 同样使用 `Style.cornerRadius`，系统圆角为 0 时退化为直角。
 - 后果：卡片四个视觉边角统一跟随 Hyprland 的 `decoration:rounding`；右缘仍不留竖线，并保持
   贴屏幕边缘的刘海轮廓。
+
+## D91 活动竖条 hover 边框复用活动窗口边框
+
+- 问题：活动竖条始终使用 Hyprland inactive border，鼠标悬停后仍像未聚焦窗口，和当前主题
+  中活动窗口的边框语义不一致。
+- 决定：`cardHovered` 为真时使用 `Border.hyprlandActiveSpec()`，绘制与 Omarchy 活动窗口
+  相同的纯色或渐变颜色及角度；鼠标移出后立即恢复 inactive border。
+- 后果：悬停状态自动跟随当前 shell 主题的活动边框 token，不需要额外轮询 `hyprctl`；
+  未悬停时仍读取实时 inactive border。
